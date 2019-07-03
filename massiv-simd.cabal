@@ -61,8 +61,7 @@ test-suite tests
   type:               exitcode-stdio-1.0
   hs-source-dirs:     tests
   main-is:            Main.hs
-  other-modules:      Common
-                    , LibSpec
+  other-modules:      Data.Massiv.Array.SIMD.DoubleSpec
                     , Spec
   build-depends:      base             >= 4.8 && < 5
                     , massiv

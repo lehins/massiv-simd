@@ -24,7 +24,6 @@ import Data.Massiv.Array.Unsafe
 import Foreign.C
 import Data.Massiv.Core.List
 import Foreign.ForeignPtr
-import Foreign.ForeignPtr.Unsafe
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
 import Foreign.Ptr
@@ -203,9 +202,6 @@ dotDouble :: Array V Ix1 Double -> Array V Ix1 Double -> Double
 dotDouble v1@(VArray _ (Sz k1) p1 fp1) v2@(VArray _ (Sz k2) p2 fp2) =
   unsafePerformIO $ do
     let (q, r) = min k1 k2 `quotRem` 2
-    -- let q = min k1 k2
-    -- withForeignPtr fp1 $ \ p1 ->
-    --   withForeignPtr fp2 $ \ p2 ->
     e <- c_dot__m128d p1 p2 (fromIntegral (q * 2))
     touchForeignPtr fp1
     touchForeignPtr fp2
@@ -214,44 +210,23 @@ dotDouble v1@(VArray _ (Sz k1) p1 fp1) v2@(VArray _ (Sz k2) p2 fp2) =
       else let !lastIx = q * 2
             in pure
                  (e + unsafeLinearIndex v1 lastIx * unsafeLinearIndex v2 lastIx)
-
-dotDoubleS :: Array S Ix1 Double -> Array S Ix1 Double -> Double
-dotDoubleS v1 v2 =
-  unsafePerformIO $ do
-    mv1 <- unsafeThaw v1
-    mv2 <- unsafeThaw v2
-    --let (q, r) = min k1 k2 `quotRem` 2
-    let q = min (unSz (size v1)) (unSz (size v2))
-    withPtr mv1 $ \ p1 ->
-      withPtr mv2 $ \ p2 -> do
-        --c_dot_m128d p1 p2 (fromIntegral q)
-        e <- c_dot__m128d (coerce p1) (coerce p2) (fromIntegral q)
-        pure e
-
-dotDoubleSumS :: Array S Ix1 Double -> Array S Ix1 Double -> Double
-dotDoubleSumS v1 v2 =
-  unsafePerformIO $ do
-    mv <- unsafeThaw $ computeAs S $ A.zipWith (*) v1 v2
-    withPtr mv $ \ p ->
-      c_sum_d p (fromIntegral (unSz (msize mv)))
-    -- withPtr mv $ \ p -> do
-    --     CDouble e <- c_sum_d (coerce p) (fromIntegral (unSz (msize mv)))
-    --     pure e
+{-# INLINE dotDouble #-}
 
 
-dotVectorS :: VS.Vector Double -> VS.Vector Double -> Double
-dotVectorS v1 v2 =
-  let v = VS.zipWith (*) v1 v2
-   in unsafePerformIO $ VS.unsafeWith v $ \ptr -> c_sum_d ptr (VS.length v)
+multiplyTransposedSIMD ::
+     Array V Ix2 Double -> Array V Ix2 Double -> Array D Ix2 Double
+multiplyTransposedSIMD arr1 arr2
+  | n1 /= m2 = throw $ SizeMismatchException (size arr1) (size arr2)
+  | otherwise =
+    makeArrayR D (getComp arr1 <> getComp arr2) (SafeSz (m1 :. n2)) $ \(i :. j) ->
+      -- dotDouble (unsafeOuterSlice arr1 i) (unsafeOuterSlice arr2 j)
+      dotDouble (arr1 !> i) (arr2 !> j)
+  where
+    SafeSz (m1 :. n1) = size arr1
+    SafeSz (n2 :. m2) = size arr2
+{-# INLINE multiplyTransposedSIMD #-}
 
 
--- dot :: Double -> Double -> IO Double
--- dot d1 d2 =
---   allocaArray 2 $ \p1' ->
---     allocaArray 2 $ \p2' -> do
---       poke p1' d1
---       poke p2' d2
---       c_dot_m128d p1' p2' 1
 
 foreign import ccall unsafe "m128d.c dot__m128d"
   c_dot__m128d :: Ptr Double -> Ptr Double -> CLLong -> IO Double
