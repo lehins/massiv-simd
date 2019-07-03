@@ -78,25 +78,35 @@ spec = do
     it "any" $
       property $ \x y ->
         epsilonEq epsilon (dotDouble x y) (A.sum (A.zipWith (*) x y))
+    it "slice" $
+      property $ \(ArrIx mat (i :. _)) ->
+        let Sz (_ :. n) = size mat
+         in even n ==>
+            let matP = computeAs P (mat :: Array V Ix2 Double)
+                x = mat !> i
+                y = matP !> i
+             in epsilonEq epsilon (dotDouble x x) (A.sum (A.zipWith (*) y y))
   describe "OuterSlice" $
     it "V vs P" $
-      property $ \(ArrIx mat (i :. _)) ->
-        let matP = computeAs P (mat :: Array V Ix2 Double)
-            res1 = mat !> i
-            res2 = matP !> i
-         in delay res1 == delay res2
+    property $ \(ArrIx mat (i :. _)) ->
+      let matP = computeAs P (mat :: Array V Ix2 Double)
+          res1 = mat !> i
+          res2 = matP !> i
+       in delay res1 == delay res2
   describe "Matrix Multiplication" $ do
     it "V vs P" $
-      property $ \mat -> totalElem (size mat) /= 0 ==>
+      property $ \(ArrIx mat _) ->
         let matP = computeAs P mat
             res1 = multiplyTransposed mat (mat :: Array V Ix2 Double)
             res2 = multiplyTransposed matP matP
          in A.and $ A.zipWith (epsilonEq epsilon) res1 res2
     it "transposed" $
-      property $ \mat -> totalElem (size mat) /= 0 ==>
-        let res1 = multiplyTransposed mat (mat :: Array V Ix2 Double)
-            res2 = multiplyTransposedSIMD mat mat
-         in A.and $ A.zipWith (epsilonEq epsilon) res1 res2
+      property $ \(ArrIx mat _) ->
+        let Sz (_ :. n) = size mat
+         in even n ==>
+            let res1 = multiplyTransposed mat (mat :: Array V Ix2 Double)
+                res2 = multiplyTransposedSIMD mat $ computeAs V mat
+             in A.and $ A.zipWith (epsilonEq epsilon) res1 res2
 
 
 epsilonEq :: (Num a, Ord a) =>

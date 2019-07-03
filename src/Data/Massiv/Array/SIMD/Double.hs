@@ -16,13 +16,13 @@
 --
 module Data.Massiv.Array.SIMD.Double where
 
-import Data.Massiv.Core
-import Data.Coerce
 import Control.Monad.Primitive
 import Data.Massiv.Array as A
 import Data.Massiv.Array.Unsafe
-import Foreign.C
+import Data.Massiv.Core
 import Data.Massiv.Core.List
+import qualified Data.Vector.Storable as VS
+import Foreign.C
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
@@ -30,7 +30,8 @@ import Foreign.Ptr
 import Foreign.Storable
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
-import qualified Data.Vector.Storable as VS
+import Data.Semigroup
+
 
 #include "massiv.h"
 
@@ -45,7 +46,7 @@ type instance EltRepr V ix = V
 data instance Array V ix e = VArray
   { vComp :: !Comp
   , vSize :: !(Sz ix)
-  , vPtr  :: !(Ptr e)
+  , vOffset  :: !Int
   , vData :: !(ForeignPtr e)
   }
 
@@ -72,11 +73,6 @@ instance (Index ix, Mutable V ix e) => Construct V ix e where
   makeArrayLinear !comp !sz f = unsafePerformIO $ generateArrayLinear comp sz (pure . f)
   {-# INLINE makeArrayLinear #-}
 
-
--- instance (VS.Storable e, Index ix) => Source S ix e where
---   unsafeLinearIndex (SArray _ _ v) =
---     INDEX_CHECK("(Source S ix e).unsafeLinearIndex", Sz . VS.length, VS.unsafeIndex) v
---   {-# INLINE unsafeLinearIndex #-}
 
 -- instance Index ix => Resize S ix where
 --   unsafeResize !sz !arr = arr { sSize = sz }
@@ -109,16 +105,14 @@ instance Index ix => Manifest V ix Double where
   {-# INLINE unsafeLinearIndexM #-}
 
 unsafeLinearForeignIndex ::
-     Storable e => Sz ix -> Ptr e -> ForeignPtr e -> Int -> e
-unsafeLinearForeignIndex sz p fp =
-  INDEX_CHECK("(Source V ix e).unsafeLinearForeignIndex", sz, \ _ i -> unsafePerformIO (unsafeLinearForeignRead p fp i)) sz
+     Storable e => Sz ix -> Int -> ForeignPtr e -> Int -> e
+unsafeLinearForeignIndex sz offset fp =
+  INDEX_CHECK("(Source V ix e).unsafeLinearForeignIndex", sz, \ _ i -> unsafePerformIO (unsafeLinearForeignRead offset fp i)) sz
 
 
-unsafeLinearForeignRead :: Storable b => Ptr b -> ForeignPtr a -> Int -> IO b
-unsafeLinearForeignRead p fp i = do
-  e <- peek (advancePtr p i)
-  touchForeignPtr fp
-  pure e
+unsafeLinearForeignRead :: Storable a => Int -> ForeignPtr a -> Int -> IO a
+unsafeLinearForeignRead offset fp i = do
+  withForeignPtr fp $ \p -> peek (advancePtr p (offset + i))
 {-# INLINE unsafeLinearForeignRead #-}
 
 
@@ -133,15 +127,15 @@ instance ( Index ix
          , Load V ix e
          ) =>
          OuterSlice V ix e where
-  unsafeOuterSlice (VArray comp sz p fp) i =
-    VArray comp (snd (unconsSz sz)) (advancePtr p kStart) fp
+  unsafeOuterSlice (VArray comp sz k fp) i =
+    VArray comp (snd (unconsSz sz)) (k + k') fp
     where
-      !kStart = toLinearIndex sz (consDim i (zeroIndex :: Lower ix))
+      !k' = toLinearIndex sz (consDim i (zeroIndex :: Lower ix))
   {-# INLINE unsafeOuterSlice #-}
 
 
 instance Index ix => Mutable V ix Double where
-  data MArray s V ix Double = MArrayDouble !(Sz ix) !(Ptr Double) !(ForeignPtr Double)
+  data MArray s V ix Double = MArrayDouble !(Sz ix) !Int !(ForeignPtr Double)
   msize (MArrayDouble sz _ _) = sz
   {-# INLINE msize #-}
   unsafeThaw (VArray _ sz p fp) = pure $ MArrayDouble sz p fp
@@ -151,7 +145,7 @@ instance Index ix => Mutable V ix Double where
   unsafeNew sz = unsafePrimToPrim $ do
     p <- mallocArray (totalElem sz)
     fp <- newForeignPtr finalizerFree p
-    pure $ MArrayDouble sz p fp
+    pure $ MArrayDouble sz 0 fp
     --(fp, _) <- unsafeMArrayToForeignPtr <$> unsafeNew sz
     --pure $ MArrayDouble sz (unsafeForeignPtrToPtr fp) fp
   {-# INLINE unsafeNew #-}
@@ -161,22 +155,21 @@ instance Index ix => Mutable V ix Double where
   unsafeLinearRead (MArrayDouble _ p fp) =
     unsafePrimToPrim . unsafeLinearForeignRead p fp
   {-# INLINE unsafeLinearRead #-}
-  unsafeLinearWrite (MArrayDouble _ p fp) i e =
+  unsafeLinearWrite (MArrayDouble _ offset fp) i e =
     unsafePrimToPrim $ do
-      poke (advancePtr p i) e
-      touchForeignPtr fp
+      withForeignPtr fp $ \p -> poke (advancePtr p (offset + i)) e
   {-# INLINE unsafeLinearWrite #-}
   -- -- TODO: Use Prim setByteArray
   -- -- unsafeLinearSet (MSArray _ v) = setByteArray ma
   -- -- {-# INLINE unsafeLinearSet #-}
-  unsafeLinearCopy (MArrayDouble _ ps fps) iFrom (MArrayDouble _ pd fpd) iTo (Sz k) =
-    unsafePrimToPrim $ do
-      let ptrFrom' = advancePtr ps iFrom
-          ptrTo' = advancePtr pd iTo
-      copyArray ptrTo' ptrFrom' k
-      touchForeignPtr fps
-      touchForeignPtr fpd
-  {-# INLINE unsafeLinearCopy #-}
+  -- unsafeLinearCopy (MArrayDouble _ offs fps) iFrom (MArrayDouble _ offd fpd) iTo (Sz k) =
+  --   unsafePrimToPrim $ do
+  --     let ptrFrom' = advancePtr ps iFrom
+  --         ptrTo' = advancePtr pd iTo
+  --     copyArray ptrTo' ptrFrom' k
+  --     touchForeignPtr fps
+  --     touchForeignPtr fpd
+  -- {-# INLINE unsafeLinearCopy #-}
   -- unsafeArrayLinearCopy arrFrom iFrom marrTo iTo sz = do
   --   marrFrom <- unsafeThaw arrFrom
   --   unsafeLinearCopy marrFrom iFrom marrTo iTo sz
@@ -198,19 +191,59 @@ instance Index ix => Mutable V ix Double where
   -- {-# INLINE unsafeLinearGrow #-}
 
 
-dotDouble :: Array V Ix1 Double -> Array V Ix1 Double -> Double
-dotDouble v1@(VArray _ (Sz k1) p1 fp1) v2@(VArray _ (Sz k2) p2 fp2) =
+dotDouble' :: Array V Ix1 Double -> Array V Ix1 Double -> Double
+dotDouble' v1@(VArray _ (Sz k1) off1 fp1) v2@(VArray _ (Sz k2) off2 fp2) =
   unsafePerformIO $ do
     let (q, r) = min k1 k2 `quotRem` 2
-    e <- c_dot__m128d p1 p2 (fromIntegral (q * 2))
-    touchForeignPtr fp1
-    touchForeignPtr fp2
+    e <-
+      withForeignPtr fp1 $ \ p1 ->
+        withForeignPtr fp2 $ \ p2 ->
+          loopM 0 (< 2 * q) (+1) 0 $ \ i acc -> do
+            e1 <- peek (advancePtr p1 (off1 + i))
+            e2 <- peek (advancePtr p2 (off2 + i))
+            pure (acc + e1 * e2)
     if r == 0
       then pure e
       else let !lastIx = q * 2
             in pure
                  (e + unsafeLinearIndex v1 lastIx * unsafeLinearIndex v2 lastIx)
+{-# INLINE dotDouble' #-}
+
+dotDouble :: Array V Ix1 Double -> Array V Ix1 Double -> Double
+dotDouble (VArray _ (Sz k1) off1 fp1) (VArray _ (Sz k2) off2 fp2) =
+  unsafePerformIO $
+    withForeignPtr fp1 $ \ p1 ->
+        withForeignPtr fp2 $ \ p2 ->
+          c_dot__m128d (advancePtr p1 off1) (advancePtr p2 off2) (fromIntegral (min k1 k2))
 {-# INLINE dotDouble #-}
+
+dotDoubleIx2 :: Array V Ix2 Double -> Int -> Array V Ix2 Double -> Int -> Double
+dotDoubleIx2 (VArray _ (Sz (_ :. k1)) _ fp1) i1 (VArray _ (Sz (_ :. k2)) _ fp2) i2 =
+  unsafePerformIO $
+    withForeignPtr fp1 $ \ p1 ->
+        withForeignPtr fp2 $ \ p2 ->
+          -- loopM 0 (< k1) (+1) 0 $ \ i acc -> do
+          --   e1 <- peek (advancePtr p1 (k1 * i1 + i))
+          --   e2 <- peek (advancePtr p2 (k2 * i2 + i))
+          --   pure (acc + e1 * e2)
+          c_dot__m128d (advancePtr p1 (k1 * i1)) (advancePtr p2 (k2 * i2)) (fromIntegral k1)
+{-# INLINE dotDoubleIx2 #-}
+
+
+-- dotDouble :: Array V Ix1 Double -> Array V Ix1 Double -> Double
+-- dotDouble v1@(VArray _ (Sz k1) off1 fp1) v2@(VArray _ (Sz k2) off2 fp2) =
+--   unsafePerformIO $ do
+--     let (q, r) = min k1 k2 `quotRem` 2
+--     e <-
+--       withForeignPtr fp1 $ \ p1 ->
+--         withForeignPtr fp2 $ \ p2 ->
+--           c_dot__m128d (advancePtr p1 off1) (advancePtr p2 off2) (fromIntegral (q * 2))
+--     if r == 0
+--       then pure e
+--       else let !lastIx = q * 2
+--             in pure
+--                  (e + unsafeLinearIndex v1 lastIx * unsafeLinearIndex v2 lastIx)
+-- {-# INLINE dotDouble #-}
 
 
 multiplyTransposedSIMD ::
@@ -219,8 +252,7 @@ multiplyTransposedSIMD arr1 arr2
   | n1 /= m2 = throw $ SizeMismatchException (size arr1) (size arr2)
   | otherwise =
     makeArrayR D (getComp arr1 <> getComp arr2) (SafeSz (m1 :. n2)) $ \(i :. j) ->
-      -- dotDouble (unsafeOuterSlice arr1 i) (unsafeOuterSlice arr2 j)
-      dotDouble (arr1 !> i) (arr2 !> j)
+      dotDouble (unsafeOuterSlice arr1 i) (unsafeOuterSlice arr2 j)
   where
     SafeSz (m1 :. n1) = size arr1
     SafeSz (n2 :. m2) = size arr2
@@ -229,7 +261,7 @@ multiplyTransposedSIMD arr1 arr2
 
 
 foreign import ccall unsafe "m128d.c dot__m128d"
-  c_dot__m128d :: Ptr Double -> Ptr Double -> CLLong -> IO Double
+  c_dot__m128d :: Ptr Double -> Ptr Double -> CLong -> IO Double
 
 
 foreign import ccall safe "m128d.c sum_d"
