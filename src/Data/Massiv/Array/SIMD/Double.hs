@@ -14,7 +14,7 @@
 -- Stability   : experimental
 -- Portability : non-portable
 --
-module Data.Massiv.Array.SIMD.Double where
+module Data.Massiv.SIMD.Array.Double where
 
 import Data.Coerce
 import Control.DeepSeq
@@ -34,7 +34,7 @@ import System.IO.Unsafe (unsafePerformIO)
 #include "massiv.h"
 
 
--- | Representation for SIMD vectorizable elements
+-- | Representation for arrays with SIMD vectorizable elements
 data V = V deriving Show
 
 type instance EltRepr V ix = V
@@ -45,7 +45,10 @@ data instance Array V ix e = VArray
   { vComp :: !Comp
   , vSize :: !(Sz ix)
   , vPtr  :: {-# UNPACK #-} !(Ptr e)
+  -- ^ Pointer to the beginning of the data, as far as this array is concerned
   , vData :: !(ForeignPtr e)
+  -- ^ Pointer that is pointing to the beginning of allocated data as well as the
+  -- necessary finilizer
   }
 
 instance (Ragged L ix e, Show e, Mutable V ix e) => Show (Array V ix e) where
@@ -172,21 +175,42 @@ instance Index ix => Mutable V ix Double where
     marrFrom <- unsafeThaw arrFrom
     unsafeLinearCopy marrFrom iFrom marrTo iTo sz
   {-# INLINE unsafeArrayLinearCopy #-}
-  -- unsafeLinearShrink marr@(MSArray _ mv@(MVS.MVector _ (ForeignPtr _ fpc))) sz = do
-  --   let shrinkMBA :: MutableByteArray RealWorld -> IO ()
-  --       shrinkMBA mba = shrinkMutableByteArray mba (totalElem sz * sizeOf (undefined :: e))
-  --       {-# INLINE shrinkMBA #-}
-  --   case fpc of
-  --     MallocPtr mba# _ -> do
-  --       unsafePrimToPrim $ shrinkMBA (MutableByteArray mba#)
-  --       pure $ MSArray sz mv
-  --     PlainPtr mba# -> do
-  --       unsafePrimToPrim $ shrinkMBA (MutableByteArray mba#)
-  --       pure $ MSArray sz mv
-  --     _ -> unsafeDefaultLinearShrink marr sz
-  -- {-# INLINE unsafeLinearShrink #-}
+  -- unsafeLinearShrink marr@(MArrayDouble _ f fp) sz = do
+  --   newf <- unsafeReallocMVArray marr sz
   -- unsafeLinearGrow (MSArray _ mv) sz = MSArray sz <$> MVS.unsafeGrow mv (totalElem sz)
   -- {-# INLINE unsafeLinearGrow #-}
+
+unsafeReallocMVArray ::
+     (Mutable V ix e, Storable e)
+  => MArray RealWorld V ix e
+  -> Sz ix
+  -> IO (Ptr e)
+unsafeReallocMVArray marr sz = withMVArrayPtr marr $ \ptr ->
+  reallocArray ptr (totalElem sz)
+{-# INLINE unsafeReallocMVArray #-}
+
+-- | Access the pointer to the first element of the array. It is unsafe to mutate the
+-- pointer, unless no one else is holding a reference to this array, or any other
+-- parrent array if that one was a result of a slice.
+--
+-- @since 0.1.0
+unsafeWithVArrayPtr :: Array V ix e -> (Ptr e -> IO a) -> IO a
+unsafeWithVArrayPtr (VArray _ _ p fp) f = withForeignPtr fp $ \_ -> f p
+{-# INLINE unsafeWithVArrayPtr #-}
+
+-- A bit of unituitive trickery:
+--  * `Array V ix e` isn't any different from `MArray s v ix e`, except that it is always
+--    polymorphic in the element
+--  * Mutable instance for V is always restricted in the element, so SIMD instructions
+--    can be utilized
+-- Because of theabove two facts, we do the opposite from what we would normally do, we
+-- freeze the mutable array in order to mutate the pointer.
+-- | Access the pointer to the first element of the mutable array.
+--
+-- @since 0.1.0
+withMVArrayPtr :: Mutable V ix e => MArray RealWorld V ix e -> (Ptr e -> IO a) -> IO a
+withMVArrayPtr marr f = unsafeFreeze Seq marr >>= (`unsafeWithVArrayPtr` f)
+{-# INLINE withMVArrayPtr #-}
 
 
 dotDouble :: Index ix => Array V ix Double -> Array V ix Double -> Double
@@ -320,3 +344,4 @@ foreign import ccall safe "m128d.c massiv_product__m128d"
 
 foreign import ccall safe "m128d.c massiv_maximum__m128d"
   c_maximum__m128d :: Ptr CDouble -> CLong -> IO CDouble
+
