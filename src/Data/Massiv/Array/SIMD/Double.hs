@@ -191,24 +191,6 @@ instance Index ix => Mutable V ix Double where
   -- {-# INLINE unsafeLinearGrow #-}
 
 
-dotDouble' :: Array V Ix1 Double -> Array V Ix1 Double -> Double
-dotDouble' v1@(VArray _ (Sz k1) off1 fp1) v2@(VArray _ (Sz k2) off2 fp2) =
-  unsafePerformIO $ do
-    let (q, r) = min k1 k2 `quotRem` 2
-    e <-
-      withForeignPtr fp1 $ \ p1 ->
-        withForeignPtr fp2 $ \ p2 ->
-          loopM 0 (< 2 * q) (+1) 0 $ \ i acc -> do
-            e1 <- peek (advancePtr p1 (off1 + i))
-            e2 <- peek (advancePtr p2 (off2 + i))
-            pure (acc + e1 * e2)
-    if r == 0
-      then pure e
-      else let !lastIx = q * 2
-            in pure
-                 (e + unsafeLinearIndex v1 lastIx * unsafeLinearIndex v2 lastIx)
-{-# INLINE dotDouble' #-}
-
 dotDouble :: Array V Ix1 Double -> Array V Ix1 Double -> Double
 dotDouble (VArray _ (Sz k1) off1 fp1) (VArray _ (Sz k2) off2 fp2) =
   unsafePerformIO $
@@ -216,34 +198,6 @@ dotDouble (VArray _ (Sz k1) off1 fp1) (VArray _ (Sz k2) off2 fp2) =
         withForeignPtr fp2 $ \ p2 ->
           c_dot__m128d (advancePtr p1 off1) (advancePtr p2 off2) (fromIntegral (min k1 k2))
 {-# INLINE dotDouble #-}
-
-dotDoubleIx2 :: Array V Ix2 Double -> Int -> Array V Ix2 Double -> Int -> Double
-dotDoubleIx2 (VArray _ (Sz (_ :. k1)) _ fp1) i1 (VArray _ (Sz (_ :. k2)) _ fp2) i2 =
-  unsafePerformIO $
-    withForeignPtr fp1 $ \ p1 ->
-        withForeignPtr fp2 $ \ p2 ->
-          -- loopM 0 (< k1) (+1) 0 $ \ i acc -> do
-          --   e1 <- peek (advancePtr p1 (k1 * i1 + i))
-          --   e2 <- peek (advancePtr p2 (k2 * i2 + i))
-          --   pure (acc + e1 * e2)
-          c_dot__m128d (advancePtr p1 (k1 * i1)) (advancePtr p2 (k2 * i2)) (fromIntegral k1)
-{-# INLINE dotDoubleIx2 #-}
-
-
--- dotDouble :: Array V Ix1 Double -> Array V Ix1 Double -> Double
--- dotDouble v1@(VArray _ (Sz k1) off1 fp1) v2@(VArray _ (Sz k2) off2 fp2) =
---   unsafePerformIO $ do
---     let (q, r) = min k1 k2 `quotRem` 2
---     e <-
---       withForeignPtr fp1 $ \ p1 ->
---         withForeignPtr fp2 $ \ p2 ->
---           c_dot__m128d (advancePtr p1 off1) (advancePtr p2 off2) (fromIntegral (q * 2))
---     if r == 0
---       then pure e
---       else let !lastIx = q * 2
---             in pure
---                  (e + unsafeLinearIndex v1 lastIx * unsafeLinearIndex v2 lastIx)
--- {-# INLINE dotDouble #-}
 
 
 multiplyTransposedSIMD ::
