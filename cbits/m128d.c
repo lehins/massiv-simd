@@ -1,11 +1,24 @@
 #include <emmintrin.h>
 #include <stdio.h>
 
+
+inline double max_double(double num1, double num2){
+  return (num1 > num2 ) ? num1 : num2;
+}
+
+inline double min_double(double num1, double num2){
+  return (num1 > num2 ) ? num2 : num1;
+}
+
+// Copy the upper double-precision (64-bit) floating-point element of a to dst.
+inline double massiv__mm_cvtsd_f64u(const __m128d val){
+  return _mm_cvtsd_f64((__m128d)_mm_srli_si128((__m128i)val, 8));
+}
+
 /**
- * Compute the dot product of two vectors with doubles. Both vectors are expected to have
- * at least `len` number of elements, but it is not checked.
+ * Compute the dot product of two vectors with doubles.
  */
-double dot__m128d(const double vec1[], const double vec2[], const long len) {
+double massiv_dot__m128d(const double vec1[], const double vec2[], const long len) {
   __m128d acc;
   long i = len % 2;
   if (i == 0)
@@ -14,35 +27,88 @@ double dot__m128d(const double vec1[], const double vec2[], const long len) {
     acc = _mm_set_sd(vec1[0] * vec2[0]);
 
   for (; i < len; i += 2) {
-    __m128d v1 = _mm_loadu_pd(&vec1[i]);
-    __m128d v2 = _mm_loadu_pd(&vec2[i]);
-    acc = _mm_add_pd(acc, _mm_mul_pd(v1, v2));
+    __m128d vi1 = _mm_loadu_pd(&vec1[i]);
+    __m128d vi2 = _mm_loadu_pd(&vec2[i]);
+    acc = _mm_add_pd(acc, _mm_mul_pd(vi1, vi2));
   }
-  return _mm_cvtsd_f64(acc + _mm_cvtsd_f64((__m128d)_mm_srli_si128((__m128i)acc, 8)));
+  return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
+}
+
+/**
+ * Add two vectors of doubles element by element and store results in the resulting
+ * vector.
+ */
+void massiv_plus__m128d(const double vec1[], const double vec2[], double res[], const long len) {
+  long i = len % 2;
+  if (i == 1)
+    res[0] = vec1[0] + vec2[0];
+
+  for (; i < len; i += 2) {
+    __m128d vi1 = _mm_loadu_pd(&vec1[i]);
+    __m128d vi2 = _mm_loadu_pd(&vec2[i]);
+    _mm_storeu_pd(&res[i], _mm_add_pd(vi1, vi2));
+  }
+}
+
+/**
+ * Compute the sum over a vector of doubles.
+ */
+double massiv_sum__m128d(const double vec[], const long len) {
+  __m128d acc;
+  long i = len % 2;
+  if (i == 0)
+    acc = _mm_setzero_pd();
+  else
+    acc = _mm_set_sd(vec[0]);
+
+  for (; i < len; i += 2) {
+    __m128d vi = _mm_loadu_pd(&vec[i]);
+    acc = _mm_add_pd(acc, vi);
+  }
+  return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
 }
 
 
-double sum_d(const double vec[], const int vecLength) {
-  int rest = vecLength % 2;
+/**
+ * Compute the product over a vector of doubles.
+ */
+double massiv_product__m128d(const double vec[], const long len) {
+  __m128d acc;
+  long i = len % 2;
+  if (i == 0)
+    acc = _mm_set1_pd(1);
+  else
+    acc = _mm_set_pd(vec[0], 1);
 
-  // two partial sums
-  double init = 0;
-  __m128d vsum = _mm_set1_pd(init);
+  for (; i < len; i += 2) {
+    __m128d vi = _mm_loadu_pd(&vec[i]);
+    acc = _mm_mul_pd(acc, vi);
+  }
+  return _mm_cvtsd_f64(acc) * massiv__mm_cvtsd_f64u(acc);
+}
 
-  double sum;
-  int i;
 
-  for (i = 0; i < vecLength - rest; i += 2) {
-    __m128d v = _mm_load_pd(&vec[i]);
-    vsum = _mm_add_pd(vsum, v);
+
+/**
+ * Find the maximum number in the vector of doubles.
+ */
+double massiv_maximum__m128d(const double vec[], const long len) {
+  __m128d cur;
+  long rem;
+  double result;
+  if (len == 1)
+    return vec[0];
+
+  cur = _mm_loadu_pd(&vec[0]);
+  rem = len % 2;
+
+  for (long i = 2; i < len - rem; i += 2) {
+    __m128d vi = _mm_loadu_pd(&vec[i]);
+    cur = _mm_max_pd(cur, vi);
   }
 
-  vsum = _mm_add_pd(vsum, (__m128d)_mm_srli_si128((__m128i)vsum, 8));
-  sum = _mm_cvtsd_f64(vsum);
-
-  for (; i < vecLength; i++) {
-    sum += vec[i];
-  }
-
-  return sum;
+  result = max_double(_mm_cvtsd_f64(cur), massiv__mm_cvtsd_f64u(cur));
+  if (rem == 1)
+    return max_double(result, vec[len - 1]);
+  return result;
 }
