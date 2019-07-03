@@ -19,9 +19,7 @@ module Data.Massiv.Array.SIMD.Double where
 import Control.Monad.Primitive
 import Data.Massiv.Array as A
 import Data.Massiv.Array.Unsafe
-import Data.Massiv.Core
 import Data.Massiv.Core.List
-import qualified Data.Vector.Storable as VS
 import Foreign.C
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
@@ -30,8 +28,7 @@ import Foreign.Ptr
 import Foreign.Storable
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
-import Data.Semigroup
-
+import Control.DeepSeq
 
 #include "massiv.h"
 
@@ -54,9 +51,9 @@ instance (Ragged L ix e, Show e, Mutable V ix e) => Show (Array V ix e) where
   showsPrec = showsArrayPrec id
   showList = showArrayList
 
--- instance NFData ix => NFData (Array S ix e) where
---   rnf (SArray c sz v) = c `deepseq` sz `deepseq` v `deepseq` ()
---   {-# INLINE rnf #-}
+instance NFData ix => NFData (Array V ix e) where
+  rnf (VArray c sz o fp) = c `deepseq` sz `deepseq` o `deepseq` fp `seq` ()
+  {-# INLINE rnf #-}
 
 -- instance (VS.Storable e, Eq e, Index ix) => Eq (Array S ix e) where
 --   (==) = eq (==)
@@ -108,6 +105,7 @@ unsafeLinearForeignIndex ::
      Storable e => Sz ix -> Int -> ForeignPtr e -> Int -> e
 unsafeLinearForeignIndex sz offset fp =
   INDEX_CHECK("(Source V ix e).unsafeLinearForeignIndex", sz, \ _ i -> unsafePerformIO (unsafeLinearForeignRead offset fp i)) sz
+{-# INLINE unsafeLinearForeignIndex #-}
 
 
 unsafeLinearForeignRead :: Storable a => Int -> ForeignPtr a -> Int -> IO a
@@ -198,6 +196,15 @@ dotDouble (VArray _ (Sz k1) off1 fp1) (VArray _ (Sz k2) off2 fp2) =
         withForeignPtr fp2 $ \ p2 ->
           c_dot__m128d (advancePtr p1 off1) (advancePtr p2 off2) (fromIntegral (min k1 k2))
 {-# INLINE dotDouble #-}
+
+
+multiplySIMD
+  :: Source r Ix2 Double =>
+     Array V Ix2 Double -> Array r Ix2 Double -> Array D Ix2 Double
+multiplySIMD arr1 arr2 = multiplyTransposedSIMD arr1 arr2'
+  where
+    arr2' = compute $ transpose arr2
+{-# INLINE multiplySIMD #-}
 
 
 multiplyTransposedSIMD ::
