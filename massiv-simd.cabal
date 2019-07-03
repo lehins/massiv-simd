@@ -32,7 +32,7 @@ library
                        -Wincomplete-record-updates
                        -Wincomplete-uni-patterns
                        -Wredundant-constraints
-  cc-options:          -Wall -msse4.1
+  cc-options:          -Wall
   c-sources:           cbits/m128d.c
 
 

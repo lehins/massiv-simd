@@ -1,8 +1,9 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Data.Massiv.Array.SIMD.DoubleSpec where
 
 import Data.Massiv.Array as A
@@ -70,13 +71,8 @@ spec :: Spec
 spec = do
   let epsilon = 0.000000000001
   describe "Dot Product" $ do
-    it "even" $
-      property $ \x y ->
-        even (unSz (size x)) &&
-        even (unSz (size y)) ==>
-        epsilonEq epsilon (dotDouble x y) (A.sum (A.zipWith (*) x y))
     it "any" $
-      property $ \x y ->
+      property $ \x (y :: Array V Ix1 Double) ->
         epsilonEq epsilon (dotDouble x y) (A.sum (A.zipWith (*) x y))
     it "slice" $
       property $ \(ArrIx mat (i :. _)) ->
@@ -103,6 +99,22 @@ spec = do
         let res1 = multiplyTransposed mat (mat :: Array V Ix2 Double)
             res2 = multiplyTransposedSIMD mat $ computeAs V mat
          in A.and $ A.zipWith (epsilonEq epsilon) res1 res2
+  describe "Folding" $ do
+    it "sum" $
+      property $ \(arr :: Array D Ix1 Double) ->
+        epsilonEq epsilon (A.sum arr) (sumDouble (computeAs V arr))
+    it "product" $
+      property $ \(arr :: Array D Ix1 Double) ->
+        epsilonEq epsilon (A.product arr) (productDouble (computeAs V arr))
+    it "maximum" $
+      property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
+        epsilonEq epsilon (A.maximum' arr) (maximumDouble (computeAs V arr))
+    it "eq" $
+      property $ \(arr :: Array D Ix1 Double) ->
+        eqDouble (computeAs V arr) (computeAs V arr)
+    it "not eq" $
+      property $ \(arr1 :: Array D Ix1 Double) (arr2 :: Array D Ix1 Double) ->
+        arr1 /= arr2 ==> not (eqDouble (computeAs V arr1) (computeAs V arr2))
 
 
 epsilonEq :: (Num a, Ord a) =>
@@ -114,5 +126,3 @@ epsilonEq epsilon x y = x == y || abs (y - x) <= n * epsilon
   where (absx, absy) = (abs x, abs y)
         n = 1 + if absx < absy then absy else absx
 
-a :: Array V Ix2 Double
-a = fromLists' Seq [[1.452424542985271], [-0.8913366027292209]]

@@ -72,13 +72,13 @@ instance (Index ix, Mutable V ix e) => Construct V ix e where
   {-# INLINE makeArrayLinear #-}
 
 
--- instance Index ix => Resize S ix where
---   unsafeResize !sz !arr = arr { sSize = sz }
---   {-# INLINE unsafeResize #-}
+instance Index ix => Resize V ix where
+  unsafeResize !sz !arr = arr { vSize = sz }
+  {-# INLINE unsafeResize #-}
 
--- instance (VS.Storable e, Index ix) => Extract S ix e where
---   unsafeExtract !sIx !newSz !arr = unsafeExtract sIx newSz (toManifest arr)
---   {-# INLINE unsafeExtract #-}
+instance (Load V Ix1 e, A.Storable e) => Extract V Ix1 e where
+  unsafeExtract !sIx !newSz (VArray c _ p fp) = VArray c newSz (advancePtr p sIx) fp
+  {-# INLINE unsafeExtract #-}
 
 
 instance Index ix => Load V ix Double where
@@ -136,18 +136,21 @@ instance ( Index ix
 
 
 instance Index ix => Mutable V ix Double where
-  data MArray s V ix Double = MArrayDouble !(Sz ix) {-# UNPACK #-} !(Ptr Double) !(ForeignPtr Double)
+  data MArray s V ix Double = MArrayDouble !(Sz ix)
+                                         {-# UNPACK #-} !(Ptr Double) !(ForeignPtr Double)
   msize (MArrayDouble sz _ _) = sz
   {-# INLINE msize #-}
   unsafeThaw (VArray _ sz p fp) = pure $ MArrayDouble sz p fp
   {-# INLINE unsafeThaw #-}
   unsafeFreeze comp (MArrayDouble sz p fp) = pure $ VArray comp sz p fp
   {-# INLINE unsafeFreeze #-}
-  unsafeNew sz = unsafePrimToPrim $ do
+  unsafeNew sz =
+    unsafePrimToPrim $
     -- TODO: deal with exceptions
-    p <- mallocArray (totalElem sz)
-    fp <- newForeignPtr finalizerFree p
-    pure $ MArrayDouble sz p fp
+     do
+      p <- mallocArray (totalElem sz)
+      fp <- newForeignPtr finalizerFree p
+      pure $ MArrayDouble sz p fp
   {-# INLINE unsafeNew #-}
   -- -- TODO: Use Prim fillByteArray
   initialize = undefined
@@ -156,24 +159,19 @@ instance Index ix => Mutable V ix Double where
     unsafePrimToPrim . unsafeLinearForeignRead p fp
   {-# INLINE unsafeLinearRead #-}
   unsafeLinearWrite (MArrayDouble _ p fp) i e =
-    unsafePrimToPrim $ do
-      withForeignPtr fp $ \_ -> poke (advancePtr p i) e
+    unsafePrimToPrim $ withForeignPtr fp $ \_ -> poke (advancePtr p i) e
   {-# INLINE unsafeLinearWrite #-}
-  -- -- TODO: Use Prim setByteArray
-  -- -- unsafeLinearSet (MSArray _ v) = setByteArray ma
-  -- -- {-# INLINE unsafeLinearSet #-}
-  -- unsafeLinearCopy (MArrayDouble _ offs fps) iFrom (MArrayDouble _ offd fpd) iTo (Sz k) =
-  --   unsafePrimToPrim $ do
-  --     let ptrFrom' = advancePtr ps iFrom
-  --         ptrTo' = advancePtr pd iTo
-  --     copyArray ptrTo' ptrFrom' k
-  --     touchForeignPtr fps
-  --     touchForeignPtr fpd
-  -- {-# INLINE unsafeLinearCopy #-}
-  -- unsafeArrayLinearCopy arrFrom iFrom marrTo iTo sz = do
-  --   marrFrom <- unsafeThaw arrFrom
-  --   unsafeLinearCopy marrFrom iFrom marrTo iTo sz
-  -- {-# INLINE unsafeArrayLinearCopy #-}
+  unsafeLinearSet (MArrayDouble _ p fp) offset len =
+    unsafePrimToPrim . broadcastDouble (advancePtr p offset) fp (Sz len)
+  {-# INLINE unsafeLinearSet #-}
+  unsafeLinearCopy (MArrayDouble _ ps fps) iFrom (MArrayDouble _ pd fpd) iTo =
+    unsafePrimToPrim .
+    copyDouble (advancePtr ps iFrom) fps (advancePtr pd iTo) fpd
+  {-# INLINE unsafeLinearCopy #-}
+  unsafeArrayLinearCopy arrFrom iFrom marrTo iTo sz = do
+    marrFrom <- unsafeThaw arrFrom
+    unsafeLinearCopy marrFrom iFrom marrTo iTo sz
+  {-# INLINE unsafeArrayLinearCopy #-}
   -- unsafeLinearShrink marr@(MSArray _ mv@(MVS.MVector _ (ForeignPtr _ fpc))) sz = do
   --   let shrinkMBA :: MutableByteArray RealWorld -> IO ()
   --       shrinkMBA mba = shrinkMutableByteArray mba (totalElem sz * sizeOf (undefined :: e))
@@ -191,14 +189,24 @@ instance Index ix => Mutable V ix Double where
   -- {-# INLINE unsafeLinearGrow #-}
 
 
-dotDouble :: Array V Ix1 Double -> Array V Ix1 Double -> Double
-dotDouble (VArray _ (Sz k1) p1 fp1) (VArray _ (Sz k2) p2 fp2) =
+dotDouble :: Index ix => Array V ix Double -> Array V ix Double -> Double
+dotDouble (VArray _ sz1 p1 fp1) (VArray _ sz2 p2 fp2) =
   coerce $
   unsafePerformIO $
   withForeignPtr fp1 $ \_ ->
     withForeignPtr fp2 $ \_ ->
-      c_dot__m128d (coerce p1) (coerce p2) (fromIntegral (min k1 k2))
+      c_dot__m128d (coerce p1) (coerce p2) (fromIntegral (min (totalElem sz1 )(totalElem sz2)))
 {-# INLINE dotDouble #-}
+
+eqDouble :: Index ix => Array V ix Double -> Array V ix Double -> Bool
+eqDouble (VArray _ sz1 p1 fp1) (VArray _ sz2 p2 fp2) =
+  sz1 == sz2 &&
+  ((== 1) $
+   unsafePerformIO $
+   withForeignPtr fp1 $ \_ ->
+     withForeignPtr fp2 $ \_ ->
+       c_eq__m128d (coerce p1) (coerce p2) (fromIntegral (totalElem sz1)))
+{-# INLINE eqDouble #-}
 
 plusDouble :: Index ix => Array V ix Double -> Array V ix Double -> Array V ix Double
 plusDouble (VArray c1 (Sz sz1) p1 fp1) (VArray c2 (Sz sz2) p2 fp2) =
@@ -241,6 +249,13 @@ sumDouble (VArray _ sz p fp) =
     c_sum__m128d (coerce p) (fromIntegral (totalElem sz))
 {-# INLINE sumDouble #-}
 
+sumDoubleIO :: Index ix => Array V ix Double -> IO Double
+sumDoubleIO (VArray _ sz p fp) =
+  coerce $
+  withForeignPtr fp $ \_ ->
+    c_sum__m128d (coerce p) (fromIntegral (totalElem sz))
+{-# INLINE sumDoubleIO #-}
+
 productDouble :: Index ix => Array V ix Double -> Double
 productDouble (VArray _ sz p fp) =
   coerce $
@@ -259,10 +274,37 @@ maximumDouble (VArray _ sz p fp) =
 
 
 
+copyDouble ::
+     Ptr Double
+  -> ForeignPtr Double
+  -> Ptr Double
+  -> ForeignPtr Double
+  -> Sz1
+  -> IO ()
+copyDouble ps fps pd fpd (Sz k) =
+  withForeignPtr fps $ \_ ->
+    withForeignPtr fpd $ \_ ->
+      c_copy__m128d (coerce ps) (coerce pd) (fromIntegral k)
+{-# INLINE copyDouble #-}
+
+broadcastDouble :: Ptr Double -> ForeignPtr Double -> Sz1 -> Double -> IO ()
+broadcastDouble p fp (Sz k) e =
+  withForeignPtr fp $ \_ -> c_broadcast__m128d (coerce p) (fromIntegral k) (CDouble e)
+{-# INLINE broadcastDouble #-}
+
+foreign import ccall unsafe "m128d.c massiv_broadcast__m128d"
+  c_broadcast__m128d :: Ptr CDouble -> CLong -> CDouble -> IO ()
+
+foreign import ccall unsafe "m128d.c massiv_copy__m128d"
+  c_copy__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
 
 foreign import ccall unsafe "m128d.c massiv_dot__m128d"
   c_dot__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
+
+foreign import ccall unsafe "m128d.c massiv_eq__m128d"
+  c_eq__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CBool
+
 
 foreign import ccall unsafe "m128d.c massiv_plus__m128d"
   c_plus__m128d :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
