@@ -2,65 +2,17 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.Massiv.Array.SIMD.DoubleSpec where
 
 import Data.Massiv.Array as A
+import Test.Massiv.Core
+import Test.Massiv.Core.Mutable
 import Data.Massiv.Array.SIMD.Double
-import Data.Typeable
 import qualified Data.Vector.Storable as VS
-import Test.Hspec
-import Test.QuickCheck as QC
-
-
--- | Arbitrary non-empty array with a valid index. Can be either `Seq` or `Par`
-data ArrIx r ix e = ArrIx (Array r ix e) ix
-
-deriving instance (Show (Array r ix e), Show ix) => Show (ArrIx r ix e)
-
--- | Non-empty size together with an index that is within bounds of that index.
-data SzIx ix = SzIx (Sz ix) ix deriving Show
-
-instance (Index ix, Arbitrary ix) => Arbitrary (SzIx ix) where
-  arbitrary = do
-    sz <- liftIndex (+1) . unSz . Sz <$> arbitrary
-    -- Make sure index is within bounds:
-    SzIx (Sz sz) . flip (liftIndex2 mod) sz <$> arbitrary
-
-instance (Arbitrary ix, Typeable e, Construct r ix e, Arbitrary e) =>
-         Arbitrary (ArrIx r ix e) where
-  arbitrary = do
-    SzIx sz ix <- arbitrary
-    func <- arbitrary
-    comp <- oneof [pure Seq, pure Par]
-    return $ ArrIx (makeArrayLinear comp sz func) ix
-
-
--- | Arbitrary array
-instance (Arbitrary ix, Typeable e, Construct r ix e, Arbitrary e) =>
-         Arbitrary (Array r ix e) where
-  arbitrary = do
-    sz <- Sz <$> arbitrary
-    func <- arbitrary
-    comp <- oneof [pure Seq, pure Par]
-    return $ makeArrayLinear comp sz func
-
-instance Arbitrary Ix2 where
-  arbitrary = (:.) <$> arbitraryIntIx <*> arbitraryIntIx
-
-instance Arbitrary Ix3 where
-  arbitrary = (:>) <$> arbitraryIntIx <*> ((:.) <$> arbitraryIntIx <*> arbitraryIntIx)
-
-instance Arbitrary Ix4 where
-  arbitrary = (:>) <$> arbitraryIntIx <*> arbitrary
-
-instance Arbitrary Ix5 where
-  arbitrary = (:>) <$> arbitraryIntIx <*> arbitrary
-
-arbitraryIntIx :: Gen Int
-arbitraryIntIx = sized (\s -> QC.resize (floor $ (sqrt :: Double -> Double) $ fromIntegral s) arbitrary)
-
 
 instance (VS.Storable a, Arbitrary a) => Arbitrary (VS.Vector a) where
     arbitrary = VS.fromList <$> arbitrary
@@ -69,6 +21,11 @@ instance (VS.Storable a, Arbitrary a) => Arbitrary (VS.Vector a) where
 
 spec :: Spec
 spec = do
+  unsafeMutableSpec @V @Ix1 @Double
+  unsafeMutableSpec @V @Ix2 @Double
+  unsafeMutableSpec @V @Ix3 @Double
+  unsafeMutableSpec @V @Ix4 @Double
+  unsafeMutableSpec @V @Ix5 @Double
   let epsilon = 0.000000000001
   describe "Dot Product" $ do
     it "any" $

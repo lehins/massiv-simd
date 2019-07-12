@@ -14,7 +14,7 @@
 -- Stability   : experimental
 -- Portability : non-portable
 --
-module Data.Massiv.SIMD.Array.Double where
+module Data.Massiv.Array.SIMD.Double where
 
 import Data.Coerce
 import Control.DeepSeq
@@ -59,9 +59,9 @@ instance NFData ix => NFData (Array V ix e) where
   rnf (VArray c sz p fp) = c `deepseq` sz `deepseq` p `deepseq` fp `seq` ()
   {-# INLINE rnf #-}
 
--- instance (VS.Storable e, Eq e, Index ix) => Eq (Array S ix e) where
---   (==) = eq (==)
---   {-# INLINE (==) #-}
+instance (Mutable V ix e, Eq e, Index ix) => Eq (Array V ix e) where
+  (==) a1 a2 = A.and $ A.zipWith (==) a1 a2
+  {-# INLINE (==) #-}
 
 -- instance (VS.Storable e, Ord e, Index ix) => Ord (Array S ix e) where
 --   compare = ord compare
@@ -139,8 +139,7 @@ instance ( Index ix
 
 
 instance Index ix => Mutable V ix Double where
-  data MArray s V ix Double = MArrayDouble !(Sz ix)
-                                         {-# UNPACK #-} !(Ptr Double) !(ForeignPtr Double)
+  data MArray s V ix Double = MArrayDouble !(Sz ix) {-# UNPACK #-} !(Ptr Double) !(ForeignPtr Double)
   msize (MArrayDouble sz _ _) = sz
   {-# INLINE msize #-}
   unsafeThaw (VArray _ sz p fp) = pure $ MArrayDouble sz p fp
@@ -203,7 +202,7 @@ unsafeWithVArrayPtr (VArray _ _ p fp) f = withForeignPtr fp $ \_ -> f p
 --    polymorphic in the element
 --  * Mutable instance for V is always restricted in the element, so SIMD instructions
 --    can be utilized
--- Because of theabove two facts, we do the opposite from what we would normally do, we
+-- Because of the above two facts, we do the opposite from what we would normally do, we
 -- freeze the mutable array in order to mutate the pointer.
 -- | Access the pointer to the first element of the mutable array.
 --
