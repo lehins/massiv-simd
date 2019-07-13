@@ -20,7 +20,7 @@ library
                      , Data.Massiv.Array.SIMD.Internal
 
   other-modules:
-  build-depends:       base            >= 4.8 && < 5
+  build-depends:       base >= 4.9 && < 5
                      , deepseq
                      , massiv >= 0.3.6
                      , primitive
@@ -60,7 +60,7 @@ test-suite tests
   main-is:            Main.hs
   other-modules:      Data.Massiv.Array.SIMD.DoubleSpec
                     , Spec
-  build-depends:      base             >= 4.8 && < 5
+  build-depends:      base
                     , massiv
                     , massiv-simd
                     , massiv-test

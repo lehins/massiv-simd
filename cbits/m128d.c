@@ -2,6 +2,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+void free_flagged(bool *not_freed, void *ptr){
+  if(!*not_freed) free(ptr);
+  free(not_freed);
+}
 
 inline double max_double(double num1, double num2){
   return (num1 > num2 ) ? num1 : num2;

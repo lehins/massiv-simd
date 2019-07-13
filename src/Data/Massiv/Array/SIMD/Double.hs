@@ -139,34 +139,36 @@ instance ( Index ix
 
 
 instance Index ix => Mutable V ix Double where
-  data MArray s V ix Double = MArrayDouble !(Sz ix) {-# UNPACK #-} !(Ptr Double) !(ForeignPtr Double)
-  msize (MArrayDouble sz _ _) = sz
+  data MArray s V ix Double = MArrayDouble !(Sz ix)
+                                         {-# UNPACK #-} !(Ptr CBool) {-# UNPACK #-} !(Ptr Double) !(ForeignPtr Double)
+  msize (MArrayDouble sz _ _ _) = sz
   {-# INLINE msize #-}
-  unsafeThaw (VArray _ sz p fp) = pure $ MArrayDouble sz p fp
+  unsafeThaw (VArray _ sz p fp) = (\ f -> MArrayDouble sz f p fp) <$> unsafePrimToPrim calloc
   {-# INLINE unsafeThaw #-}
-  unsafeFreeze comp (MArrayDouble sz p fp) = pure $ VArray comp sz p fp
+  unsafeFreeze comp (MArrayDouble sz _ p fp) = pure $ VArray comp sz p fp
   {-# INLINE unsafeFreeze #-}
   unsafeNew sz =
     unsafePrimToPrim $
     -- TODO: deal with exceptions
      do
       p <- mallocArray (totalElem sz)
-      fp <- newForeignPtr finalizerFree p
-      pure $ MArrayDouble sz p fp
+      freed <- calloc
+      fp <- newForeignPtrEnv finalizerFreeFlagged freed p
+      pure $ MArrayDouble sz freed p fp
   {-# INLINE unsafeNew #-}
   -- -- TODO: Use Prim fillByteArray
   initialize = undefined
   {-# INLINE initialize #-}
-  unsafeLinearRead (MArrayDouble _ p fp) =
+  unsafeLinearRead (MArrayDouble _ _ p fp) =
     unsafePrimToPrim . unsafeLinearForeignRead p fp
   {-# INLINE unsafeLinearRead #-}
-  unsafeLinearWrite (MArrayDouble _ p fp) i e =
+  unsafeLinearWrite (MArrayDouble _ _ p fp) i e =
     unsafePrimToPrim $ withForeignPtr fp $ \_ -> poke (advancePtr p i) e
   {-# INLINE unsafeLinearWrite #-}
-  unsafeLinearSet (MArrayDouble _ p fp) offset len =
+  unsafeLinearSet (MArrayDouble _ _ p fp) offset len =
     unsafePrimToPrim . broadcastDouble (advancePtr p offset) fp (Sz len)
   {-# INLINE unsafeLinearSet #-}
-  unsafeLinearCopy (MArrayDouble _ ps fps) iFrom (MArrayDouble _ pd fpd) iTo =
+  unsafeLinearCopy (MArrayDouble _ _ ps fps) iFrom (MArrayDouble _ _ pd fpd) iTo =
     unsafePrimToPrim .
     copyDouble (advancePtr ps iFrom) fps (advancePtr pd iTo) fpd
   {-# INLINE unsafeLinearCopy #-}
@@ -174,10 +176,19 @@ instance Index ix => Mutable V ix Double where
     marrFrom <- unsafeThaw arrFrom
     unsafeLinearCopy marrFrom iFrom marrTo iTo sz
   {-# INLINE unsafeArrayLinearCopy #-}
-  -- unsafeLinearShrink marr@(MArrayDouble _ f fp) sz = do
-  --   newf <- unsafeReallocMVArray marr sz
-  -- unsafeLinearGrow (MSArray _ mv) sz = MSArray sz <$> MVS.unsafeGrow mv (totalElem sz)
-  -- {-# INLINE unsafeLinearGrow #-}
+  unsafeLinearShrink (MArrayDouble _ freed curPtr fp) sz =
+    unsafePrimToPrim $
+    withForeignPtr fp $ \ptr -> do
+      let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: Double)
+      rPtr <- reallocArray ptr (offset + totalElem sz)
+      if rPtr == ptr
+        then pure (MArrayDouble sz freed curPtr fp)
+        else do
+          fp' <- newForeignPtrEnv finalizerFreeFlagged freed rPtr
+          pure $ MArrayDouble sz freed (advancePtr rPtr offset) fp'
+  unsafeLinearGrow (MArrayDouble _ freed curPtr fp) =
+    unsafePrimToPrim . unsafeReallocMVArrayDouble freed curPtr fp
+  {-# INLINE unsafeLinearGrow #-}
 
 unsafeReallocMVArray ::
      (Mutable V ix e, Storable e)
@@ -187,6 +198,26 @@ unsafeReallocMVArray ::
 unsafeReallocMVArray marr sz = withMVArrayPtr marr $ \ptr ->
   reallocArray ptr (totalElem sz)
 {-# INLINE unsafeReallocMVArray #-}
+
+
+unsafeReallocMVArrayDouble ::
+     (Mutable V ix Double)
+  => Ptr CBool
+  -> Ptr Double
+  -> ForeignPtr Double
+  -> Sz ix
+  -> IO (MArray s V ix Double)
+unsafeReallocMVArrayDouble freed curPtr fp sz =
+  withForeignPtr fp $ \ptr -> do
+    let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: Double)
+    rPtr <- reallocArray ptr (offset + totalElem sz)
+    poke freed 1
+    freed' <- calloc
+    fp' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
+    pure $ MArrayDouble sz freed' (advancePtr rPtr offset) fp'
+{-# INLINE unsafeReallocMVArrayDouble #-}
+
+
 
 -- | Access the pointer to the first element of the array. It is unsafe to mutate the
 -- pointer, unless no one else is holding a reference to this array, or any other
@@ -235,7 +266,7 @@ plusDouble :: Index ix => Array V ix Double -> Array V ix Double -> Array V ix D
 plusDouble (VArray c1 (Sz sz1) p1 fp1) (VArray c2 (Sz sz2) p2 fp2) =
   unsafePerformIO $ do
     let !sz = SafeSz $ liftIndex2 min sz1 sz2
-    MArrayDouble _ pRes fpRes <- unsafeNew sz
+    MArrayDouble _ _ pRes fpRes <- unsafeNew sz
     withForeignPtr fpRes $ \_ ->
       withForeignPtr fp1 $ \_ ->
         withForeignPtr fp2 $ \_ ->
@@ -344,3 +375,6 @@ foreign import ccall safe "m128d.c massiv_product__m128d"
 foreign import ccall safe "m128d.c massiv_maximum__m128d"
   c_maximum__m128d :: Ptr CDouble -> CLong -> IO CDouble
 
+
+
+foreign import ccall unsafe "m128d.c &free_flagged" finalizerFreeFlagged :: FinalizerEnvPtr CBool a
