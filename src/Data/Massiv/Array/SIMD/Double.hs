@@ -20,18 +20,15 @@ import Data.Coerce
 import Control.DeepSeq
 import Control.Monad.Primitive
 import Data.Massiv.Array as A
---import Data.Massiv.Array.ForeignArray
+import Data.Massiv.Array.ForeignArray
 import Data.Massiv.Array.Unsafe
 import Data.Massiv.Core.List
 import Foreign.C
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
 import Foreign.Ptr
-import Foreign.Storable
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
-import Control.Exception
 
 #include "massiv.h"
 
@@ -45,12 +42,7 @@ type instance EltRepr V ix = V
 
 data instance Array V ix e = VArray
   { vComp :: !Comp
-  , vSize :: !(Sz ix)
-  , vPtr  :: {-# UNPACK #-} !(Ptr e)
-  -- ^ Pointer to the beginning of the data, as far as this array is concerned
-  , vData :: !(ForeignPtr e)
-  -- ^ Pointer that is pointing to the beginning of allocated data as well as the
-  -- necessary finilizer
+  , vArray :: !(ForeignArray ix e)
   }
 
 instance (Ragged L ix e, Show e, Mutable V ix e) => Show (Array V ix e) where
@@ -58,7 +50,7 @@ instance (Ragged L ix e, Show e, Mutable V ix e) => Show (Array V ix e) where
   showList = showArrayList
 
 instance NFData ix => NFData (Array V ix e) where
-  rnf (VArray c sz p fp) = c `deepseq` sz `deepseq` p `deepseq` fp `seq` ()
+  rnf (VArray comp arr) = comp `deepseq` rnf arr
   {-# INLINE rnf #-}
 
 instance (Mutable V ix e, Eq e, Index ix) => Eq (Array V ix e) where
@@ -78,20 +70,20 @@ instance (Index ix, Mutable V ix e) => Construct V ix e where
 
 
 instance Index ix => Resize V ix where
-  unsafeResize !sz !arr = arr { vSize = sz }
+  unsafeResize !sz !arr = arr {vArray = (vArray arr) {foreignArraySize = sz}}
   {-# INLINE unsafeResize #-}
 
 instance (Load V Ix1 e, A.Storable e) => Extract V Ix1 e where
-  unsafeExtract !sIx !newSz (VArray c _ p fp) = VArray c newSz (advancePtr p sIx) fp
+  unsafeExtract !sIx !newSz (VArray comp arr) = VArray comp (extractForeignArray sIx newSz arr)
   {-# INLINE unsafeExtract #-}
 
 
 instance Index ix => Load V ix Double where
 
-  getComp (VArray comp _ _ _) = comp
+  getComp = vComp
   {-# INLINE getComp #-}
 
-  size (VArray _ sz _ _) = sz
+  size = foreignArraySize . vArray
   {-# INLINE size #-}
 
   loadArrayM !scheduler !arr =
@@ -99,30 +91,16 @@ instance Index ix => Load V ix Double where
   {-# INLINE loadArrayM #-}
 
 instance (Storable e, Load V ix e) => Source V ix e where
-  unsafeLinearIndex (VArray _ sz p fp) = unsafeLinearForeignIndex sz p fp
+  unsafeLinearIndex (VArray _ arr) = unsafePerformIO . readForeignArray arr
   {-# INLINE unsafeLinearIndex #-}
 
 
-instance Index ix => Manifest V ix Double where
-  unsafeLinearIndexM (VArray _ sz p fp) = unsafeLinearForeignIndex sz p fp
+instance (Storable e, Load V ix e) => Manifest V ix e where
+  unsafeLinearIndexM (VArray _ arr) = unsafePerformIO . readForeignArray arr
   {-# INLINE unsafeLinearIndexM #-}
 
-unsafeLinearForeignIndex ::
-     Storable e => Sz ix -> Ptr e -> ForeignPtr e -> Int -> e
-unsafeLinearForeignIndex sz p fp =
-  INDEX_CHECK("(Source V ix e).unsafeLinearForeignIndex", sz, \ _ i -> unsafePerformIO (unsafeLinearForeignRead p fp i)) sz
-{-# INLINE unsafeLinearForeignIndex #-}
 
-
-unsafeLinearForeignRead :: Storable e => Ptr e -> ForeignPtr e -> Int -> IO e
-unsafeLinearForeignRead p fp i = do
-  e <- peek (advancePtr p i)
-  touchForeignPtr fp
-  pure e
-{-# INLINE unsafeLinearForeignRead #-}
-
-
-instance {-# OVERLAPPING #-} (Load V Ix1 e, Mutable V Ix1 e) => OuterSlice V Ix1 e where
+instance {-# OVERLAPPING #-} (Storable e, Load V Ix1 e) => OuterSlice V Ix1 e where
   unsafeOuterSlice = unsafeLinearIndex
   {-# INLINE unsafeOuterSlice #-}
 
@@ -133,109 +111,88 @@ instance ( Index ix
          , Load V ix e
          ) =>
          OuterSlice V ix e where
-  unsafeOuterSlice (VArray comp sz p fp) i =
-    VArray comp (snd (unconsSz sz)) (advancePtr p offset) fp
-    where
-      !offset = toLinearIndex sz (consDim i (zeroIndex :: Lower ix))
+  unsafeOuterSlice (VArray comp arr) = VArray comp . sliceForeignArray arr
   {-# INLINE unsafeOuterSlice #-}
 
 
 instance Index ix => Mutable V ix Double where
-  data MArray s V ix Double = MArrayDouble !(Sz ix)
-                                         {-# UNPACK #-} !(Ptr CBool) {-# UNPACK #-} !(Ptr Double) !(ForeignPtr Double)
-  msize (MArrayDouble sz _ _ _) = sz
+  newtype MArray s V ix Double = MArrayDouble (ForeignArray ix
+                                               Double)
+  msize (MArrayDouble arr) = foreignArraySize arr
   {-# INLINE msize #-}
-  unsafeThaw (VArray _ sz p fp) = (\ f -> MArrayDouble sz f p fp) <$> unsafePrimToPrim calloc
+  unsafeThaw (VArray _ arr) = pure (MArrayDouble arr)
   {-# INLINE unsafeThaw #-}
-  unsafeFreeze comp (MArrayDouble sz _ p fp) = pure $ VArray comp sz p fp
+  unsafeFreeze comp (MArrayDouble arr) = pure $ VArray comp arr
   {-# INLINE unsafeFreeze #-}
-  unsafeNew sz = unsafePrimToPrim $ do
-    bracketOnError (do
-      ptr <- mallocArray (totalElem sz)
-      freed <- calloc
-      pure (freed, ptr))
-      (\(freed, ptr) -> free ptr >> free freed)
-      (\(freed, ptr) -> do
-          fptr <- newForeignPtrEnv finalizerFreeFlagged freed ptr
-          pure (MArrayDouble sz freed ptr fptr))
-
+  unsafeNew sz = unsafePrimToPrim (MArrayDouble <$> mallocForeignArray sz)
   {-# INLINE unsafeNew #-}
   -- -- TODO: Use Prim fillByteArray
-  initialize (MArrayDouble sz _ p fp) =
-    unsafePrimToPrim $ broadcastDouble p fp (Sz (totalElem sz)) 0
+  initialize (MArrayDouble arr) =
+    unsafePrimToPrim $ broadcastDouble arr 0 (sizeForeignArray arr) 0
   {-# INLINE initialize #-}
   initializeNew mDef sz =
     case mDef of
-      Nothing ->
-        unsafePrimToPrim $
-         -- TODO: deal with exceptions
-          do
-           p <- callocArray (totalElem sz)
-           freed <- calloc
-           fp <- newForeignPtrEnv finalizerFreeFlagged freed p
-           pure $ MArrayDouble sz freed p fp
+      Nothing -> unsafePrimToPrim (MArrayDouble <$> callocForeignArray sz)
       Just defVal -> do
         marr <- unsafeNew sz
         unsafeLinearSet marr 0 (totalElem sz) defVal
         pure marr
   {-# INLINE initializeNew #-}
-  unsafeLinearRead (MArrayDouble _ _ p fp) =
-    unsafePrimToPrim . unsafeLinearForeignRead p fp
+  unsafeLinearRead (MArrayDouble arr) = unsafePrimToPrim . readForeignArray arr
   {-# INLINE unsafeLinearRead #-}
-  unsafeLinearWrite (MArrayDouble _ _ p fp) i e =
-    unsafePrimToPrim $ withForeignPtr fp $ \_ -> poke (advancePtr p i) e
+  unsafeLinearWrite (MArrayDouble arr) i =
+    unsafePrimToPrim . writeForeignArray arr i
   {-# INLINE unsafeLinearWrite #-}
-  unsafeLinearSet (MArrayDouble _ _ p fp) offset len =
-    unsafePrimToPrim . broadcastDouble (advancePtr p offset) fp (Sz len)
+  unsafeLinearSet (MArrayDouble arr) offset len =
+    unsafePrimToPrim . broadcastDouble arr offset (Sz len)
   {-# INLINE unsafeLinearSet #-}
-  unsafeLinearCopy (MArrayDouble _ _ ps fps) iFrom (MArrayDouble _ _ pd fpd) iTo =
-    unsafePrimToPrim .
-    copyDouble (advancePtr ps iFrom) fps (advancePtr pd iTo) fpd
+  unsafeLinearCopy (MArrayDouble arrs) iFrom (MArrayDouble arrd) iTo =
+    unsafePrimToPrim . copyDouble arrs iFrom arrd iTo
   {-# INLINE unsafeLinearCopy #-}
   unsafeArrayLinearCopy arrFrom iFrom marrTo iTo sz = do
     marrFrom <- unsafeThaw arrFrom
     unsafeLinearCopy marrFrom iFrom marrTo iTo sz
   {-# INLINE unsafeArrayLinearCopy #-}
-  unsafeLinearShrink (MArrayDouble _ freed curPtr fp) sz =
-    unsafePrimToPrim $
-    withForeignPtr fp $ \ptr -> do
-      let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: Double)
-      rPtr <- reallocArray ptr (offset + totalElem sz)
-      if rPtr == ptr
-        then pure (MArrayDouble sz freed curPtr fp)
-        else do
-          fp' <- newForeignPtrEnv finalizerFreeFlagged freed rPtr
-          pure $ MArrayDouble sz freed (advancePtr rPtr offset) fp'
-  unsafeLinearGrow (MArrayDouble _ freed curPtr fp) =
-    unsafePrimToPrim . unsafeReallocMVArrayDouble freed curPtr fp
-  {-# INLINE unsafeLinearGrow #-}
+  -- unsafeLinearShrink (MArrayDouble _ freed curPtr fp) sz =
+  --   unsafePrimToPrim $
+  --   withForeignPtr fp $ \ptr -> do
+  --     let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: Double)
+  --     rPtr <- reallocArray ptr (offset + totalElem sz)
+  --     if rPtr == ptr
+  --       then pure (MArrayDouble sz freed curPtr fp)
+  --       else do
+  --         fp' <- newForeignPtrEnv finalizerFreeFlagged freed rPtr
+  --         pure $ MArrayDouble sz freed (advancePtr rPtr offset) fp'
+  -- unsafeLinearGrow (MArrayDouble _ freed curPtr fp) =
+  --   unsafePrimToPrim . unsafeReallocMVArrayDouble freed curPtr fp
+  -- {-# INLINE unsafeLinearGrow #-}
 
-unsafeReallocMVArray ::
-     (Mutable V ix e, Storable e)
-  => MArray RealWorld V ix e
-  -> Sz ix
-  -> IO (Ptr e)
-unsafeReallocMVArray marr sz = withMVArrayPtr marr $ \ptr ->
-  reallocArray ptr (totalElem sz)
-{-# INLINE unsafeReallocMVArray #-}
+-- unsafeReallocMVArray ::
+--      (Mutable V ix e, Storable e)
+--   => MArray RealWorld V ix e
+--   -> Sz ix
+--   -> IO (Ptr e)
+-- unsafeReallocMVArray marr sz = withMVArrayPtr marr $ \ptr ->
+--   reallocArray ptr (totalElem sz)
+-- {-# INLINE unsafeReallocMVArray #-}
 
 
-unsafeReallocMVArrayDouble ::
-     (Mutable V ix Double)
-  => Ptr CBool
-  -> Ptr Double
-  -> ForeignPtr Double
-  -> Sz ix
-  -> IO (MArray s V ix Double)
-unsafeReallocMVArrayDouble freed curPtr fp sz =
-  withForeignPtr fp $ \ptr -> do
-    let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: Double)
-    rPtr <- reallocArray ptr (offset + totalElem sz)
-    poke freed 1
-    freed' <- calloc
-    fp' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
-    pure $ MArrayDouble sz freed' (advancePtr rPtr offset) fp'
-{-# INLINE unsafeReallocMVArrayDouble #-}
+-- unsafeReallocMVArrayDouble ::
+--      (Mutable V ix Double)
+--   => Ptr CBool
+--   -> Ptr Double
+--   -> ForeignPtr Double
+--   -> Sz ix
+--   -> IO (MArray s V ix Double)
+-- unsafeReallocMVArrayDouble freed curPtr fp sz =
+--   withForeignPtr fp $ \ptr -> do
+--     let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: Double)
+--     rPtr <- reallocArray ptr (offset + totalElem sz)
+--     poke freed 1
+--     freed' <- calloc
+--     fp' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
+--     pure $ MArrayDouble sz freed' (advancePtr rPtr offset) fp'
+-- {-# INLINE unsafeReallocMVArrayDouble #-}
 
 
 
@@ -245,7 +202,7 @@ unsafeReallocMVArrayDouble freed curPtr fp sz =
 --
 -- @since 0.1.0
 unsafeWithVArrayPtr :: Array V ix e -> (Ptr e -> IO a) -> IO a
-unsafeWithVArrayPtr (VArray _ _ p fp) f = withForeignPtr fp $ \_ -> f p
+unsafeWithVArrayPtr (VArray _ arr) f = withForeignArray arr f
 {-# INLINE unsafeWithVArrayPtr #-}
 
 -- A bit of unituitive trickery:
@@ -264,34 +221,39 @@ withMVArrayPtr marr f = unsafeFreeze Seq marr >>= (`unsafeWithVArrayPtr` f)
 
 
 dotDouble :: Index ix => Array V ix Double -> Array V ix Double -> Double
-dotDouble (VArray _ sz1 p1 fp1) (VArray _ sz2 p2 fp2) =
+dotDouble (VArray _ arr1) (VArray _ arr2) =
   coerce $
   unsafePerformIO $
-  withForeignPtr fp1 $ \_ ->
-    withForeignPtr fp2 $ \_ ->
-      c_dot__m128d (coerce p1) (coerce p2) (fromIntegral (min (totalElem sz1 )(totalElem sz2)))
+  withForeignArray arr1 $ \p1 ->
+    withForeignArray arr2 $ \p2 ->
+      c_dot__m128d
+        (coerce p1)
+        (coerce p2)
+        (fromIntegral
+           (unSz (min (sizeForeignArray arr1) (sizeForeignArray arr2))))
 {-# INLINE dotDouble #-}
 
 eqDouble :: Index ix => Array V ix Double -> Array V ix Double -> Bool
-eqDouble (VArray _ sz1 p1 fp1) (VArray _ sz2 p2 fp2) =
-  sz1 == sz2 &&
-  ((== 1) $
-   unsafePerformIO $
-   withForeignPtr fp1 $ \_ ->
-     withForeignPtr fp2 $ \_ ->
-       c_eq__m128d (coerce p1) (coerce p2) (fromIntegral (totalElem sz1)))
+eqDouble (VArray _ arr1) (VArray _ arr2) =
+  foreignArraySize arr1 == foreignArraySize arr2 &&
+  (foreignArrayPtr arr1 == foreignArrayPtr arr2 || 1 == unsafePerformIO eqDoubleData)
+  where
+    eqDoubleData =
+      withForeignArray arr1 $ \p1 ->
+        withForeignArray arr2 $ \p2 ->
+          c_eq__m128d (coerce p1) (coerce p2) (fromIntegral (unSz (sizeForeignArray arr1)))
 {-# INLINE eqDouble #-}
 
 plusDouble :: Index ix => Array V ix Double -> Array V ix Double -> Array V ix Double
-plusDouble (VArray c1 (Sz sz1) p1 fp1) (VArray c2 (Sz sz2) p2 fp2) =
+plusDouble (VArray c1 arr1) (VArray c2 arr2) =
   unsafePerformIO $ do
-    let !sz = SafeSz $ liftIndex2 min sz1 sz2
-    MArrayDouble _ _ pRes fpRes <- unsafeNew sz
-    withForeignPtr fpRes $ \_ ->
-      withForeignPtr fp1 $ \_ ->
-        withForeignPtr fp2 $ \_ ->
+    let !sz = SafeSz $ liftIndex2 min (unSz (foreignArraySize arr1)) (unSz (foreignArraySize arr2))
+    resArr <- mallocForeignArray sz
+    withForeignArray arr1 $ \p1 ->
+      withForeignArray arr2 $ \p2 ->
+        withForeignArray resArr $ \pRes ->
           c_plus__m128d (coerce p1) (coerce p2) (coerce pRes) (fromIntegral (totalElem sz))
-    pure $ VArray (c1 <> c2) sz pRes fpRes
+    pure $ VArray (c1 <> c2) resArr
 {-# INLINE plusDouble #-}
 
 multiplySIMD
@@ -316,54 +278,48 @@ multiplyTransposedSIMD arr1 arr2
 {-# INLINE multiplyTransposedSIMD #-}
 
 sumDouble :: Index ix => Array V ix Double -> Double
-sumDouble (VArray _ sz p fp) =
-  coerce $
-  unsafePerformIO $
-  withForeignPtr fp $ \_ ->
-    c_sum__m128d (coerce p) (fromIntegral (totalElem sz))
+sumDouble = unsafePerformIO . sumDoubleIO
 {-# INLINE sumDouble #-}
 
 sumDoubleIO :: Index ix => Array V ix Double -> IO Double
-sumDoubleIO (VArray _ sz p fp) =
+sumDoubleIO (VArray _ arr) =
   coerce $
-  withForeignPtr fp $ \_ ->
-    c_sum__m128d (coerce p) (fromIntegral (totalElem sz))
+  withForeignArray arr $ \ptr ->
+    c_sum__m128d (coerce ptr) (fromIntegral (unSz (sizeForeignArray arr)))
 {-# INLINE sumDoubleIO #-}
 
 productDouble :: Index ix => Array V ix Double -> Double
-productDouble (VArray _ sz p fp) =
+productDouble (VArray _ arr) =
   coerce $
   unsafePerformIO $
-  withForeignPtr fp $ \_ ->
-    c_product__m128d (coerce p) (fromIntegral (totalElem sz))
+  withForeignArray arr $ \ptr ->
+    c_product__m128d (coerce ptr) (fromIntegral (unSz (sizeForeignArray arr)))
 {-# INLINE productDouble #-}
 
 maximumDouble :: Index ix => Array V ix Double -> Double
-maximumDouble (VArray _ sz p fp) =
+maximumDouble (VArray _ arr) =
   coerce $
   unsafePerformIO $
-  withForeignPtr fp $ \_ ->
-    c_maximum__m128d (coerce p) (fromIntegral (totalElem sz))
+  withForeignArray arr $ \ptr ->
+    c_maximum__m128d (coerce ptr) (fromIntegral (unSz (sizeForeignArray arr)))
 {-# INLINE maximumDouble #-}
 
 
 
-copyDouble ::
-     Ptr Double
-  -> ForeignPtr Double
-  -> Ptr Double
-  -> ForeignPtr Double
-  -> Sz1
-  -> IO ()
-copyDouble ps fps pd fpd (Sz k) =
-  withForeignPtr fps $ \_ ->
-    withForeignPtr fpd $ \_ ->
-      c_copy__m128d (coerce ps) (coerce pd) (fromIntegral k)
+copyDouble :: ForeignArray ix1 Double -> Ix1 -> ForeignArray ix2 Double -> Ix1 -> Sz1 -> IO ()
+copyDouble arrs iFrom arrd iTo (Sz k) =
+  withForeignArray arrs $ \ps ->
+    withForeignArray arrd $ \pd ->
+      c_copy__m128d (coerce (advancePtr ps iFrom)) (coerce (advancePtr pd iTo)) (fromIntegral k)
 {-# INLINE copyDouble #-}
 
-broadcastDouble :: Ptr Double -> ForeignPtr Double -> Sz1 -> Double -> IO ()
-broadcastDouble p fp (Sz k) e =
-  withForeignPtr fp $ \_ -> c_broadcast__m128d (coerce p) (fromIntegral k) (CDouble e)
+broadcastDouble :: ForeignArray ix Double -> Ix1 -> Sz1 -> Double -> IO ()
+broadcastDouble arr offset (Sz k) e =
+  withForeignArray arr $ \ptr ->
+    c_broadcast__m128d
+      (coerce (advancePtr ptr offset))
+      (fromIntegral k)
+      (CDouble e)
 {-# INLINE broadcastDouble #-}
 
 foreign import ccall unsafe "m128d.c massiv_broadcast__m128d"

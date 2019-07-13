@@ -12,9 +12,11 @@
 --
 module Data.Massiv.Array.ForeignArray
   ( ForeignArray(..)
+  , sizeForeignArray
   , mallocForeignArray
   , callocForeignArray
   , reallocForeignArray
+  , withForeignArray
   , readForeignArray
   , writeForeignArray
   , sliceForeignArray
@@ -22,6 +24,7 @@ module Data.Massiv.Array.ForeignArray
   ) where
 
 import Data.Massiv.Core.Index
+import Data.Massiv.Array.Unsafe (Sz(SafeSz))
 import Foreign.C
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
@@ -29,20 +32,40 @@ import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
 import Prelude hiding (mapM)
-
+import Control.DeepSeq
 
 #include "massiv.h"
 
 
 data ForeignArray ix e = ForeignArray
   { foreignArraySize       :: !(Sz ix)
+  -- ^ Size of the array. Can be less than the actual memory allocated
+  --
+  -- @since 0.1.0
   , foreignArrayFreeFlag   :: {-# UNPACK #-}!(Ptr CBool)
+  -- ^ Whenever this pointer @false@ (i.e. contains @0@) the associated finalizer will
+  -- free the memory during GC. Which means, if memory was freed by some other means (eg.
+  -- as calling `free`) this pointer must be set to @true@ (i.e a non-zero value).
+  --
+  -- @since 0.1.0
   , foreignArrayPtr        :: {-# UNPACK #-}!(Ptr e)
+  -- ^ Pointer to the beginning of the data, as far as this array is concerned, which
+  -- means it does not necesserally points to the beginning of the allocated memory.
+  --
+  -- @since 0.1.0
   , foreignArrayForeignPtr :: !(ForeignPtr e)
+  -- ^ Foreign pointer with a @free@ finalizer that is pointing to the beginning of
+  -- allocated data. Finalizer will not attempt to free the memory if
+  -- `foreignArrayFreeFlag` is set to @true@.
+  --
+  -- @since 0.1.0
   }
 
 
 foreign import ccall unsafe "massiv.c &free_flagged" finalizerFreeFlagged :: FinalizerEnvPtr CBool a
+
+instance NFData ix => NFData (ForeignArray ix e) where
+  rnf (ForeignArray sz flag ptr fptr) = sz `deepseq` flag `deepseq` ptr `deepseq` fptr `seq` ()
 
 
 -- | Allocate an array, but do not initialize any elements.
@@ -106,8 +129,8 @@ readForeignArray (ForeignArray sz _ curPtr fptr) =
 --
 -- @since 0.1.0
 writeForeignArray :: (Index ix, Storable e) => ForeignArray ix e -> Ix1 -> e -> IO ()
-writeForeignArray (ForeignArray sz _ curPtr fptr) =
-  INDEX_CHECK("ForeignArray.writeForeignArray", Sz . totalElem, \ _ i e -> withForeignPtr fptr $ \_ -> poke (advancePtr curPtr i) e) sz
+writeForeignArray =
+  INDEX_CHECK("ForeignArray.writeForeignArray", sizeForeignArray, \ arr i e -> withForeignArray arr $ \ptr -> poke (advancePtr ptr i) e)
 {-# INLINE writeForeignArray #-}
 
 -- | Take an outer slice of an array, thus lowering the dimensionality. Does no bounds
@@ -139,3 +162,20 @@ extractForeignArray ::
 extractForeignArray i newsz (ForeignArray _ freed curPtr fptr) =
   ForeignArray newsz freed (advancePtr curPtr i) fptr
 {-# INLINE extractForeignArray #-}
+
+-- | Access the pointer to the beginning of this array.
+--
+-- @since 0.1.0
+withForeignArray :: ForeignArray ix e -> (Ptr e -> IO a) -> IO a
+withForeignArray (ForeignArray _ _ curPtr fptr) f =
+  withForeignPtr fptr $ \_ -> f curPtr
+{-# INLINE withForeignArray #-}
+
+
+
+-- | Get the total number of elements in the array
+--
+-- @since 0.1.0
+sizeForeignArray :: Index ix => ForeignArray ix e -> Sz1
+sizeForeignArray (ForeignArray sz _ _ _) = SafeSz (totalElem sz)
+{-# INLINE sizeForeignArray #-}
