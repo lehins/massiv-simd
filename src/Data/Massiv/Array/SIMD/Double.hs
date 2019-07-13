@@ -20,6 +20,7 @@ import Data.Coerce
 import Control.DeepSeq
 import Control.Monad.Primitive
 import Data.Massiv.Array as A
+--import Data.Massiv.Array.ForeignArray
 import Data.Massiv.Array.Unsafe
 import Data.Massiv.Core.List
 import Foreign.C
@@ -30,6 +31,7 @@ import Foreign.Ptr
 import Foreign.Storable
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
+import Control.Exception
 
 #include "massiv.h"
 
@@ -147,18 +149,36 @@ instance Index ix => Mutable V ix Double where
   {-# INLINE unsafeThaw #-}
   unsafeFreeze comp (MArrayDouble sz _ p fp) = pure $ VArray comp sz p fp
   {-# INLINE unsafeFreeze #-}
-  unsafeNew sz =
-    unsafePrimToPrim $
-    -- TODO: deal with exceptions
-     do
-      p <- mallocArray (totalElem sz)
+  unsafeNew sz = unsafePrimToPrim $ do
+    bracketOnError (do
+      ptr <- mallocArray (totalElem sz)
       freed <- calloc
-      fp <- newForeignPtrEnv finalizerFreeFlagged freed p
-      pure $ MArrayDouble sz freed p fp
+      pure (freed, ptr))
+      (\(freed, ptr) -> free ptr >> free freed)
+      (\(freed, ptr) -> do
+          fptr <- newForeignPtrEnv finalizerFreeFlagged freed ptr
+          pure (MArrayDouble sz freed ptr fptr))
+
   {-# INLINE unsafeNew #-}
   -- -- TODO: Use Prim fillByteArray
-  initialize = undefined
+  initialize (MArrayDouble sz _ p fp) =
+    unsafePrimToPrim $ broadcastDouble p fp (Sz (totalElem sz)) 0
   {-# INLINE initialize #-}
+  initializeNew mDef sz =
+    case mDef of
+      Nothing ->
+        unsafePrimToPrim $
+         -- TODO: deal with exceptions
+          do
+           p <- callocArray (totalElem sz)
+           freed <- calloc
+           fp <- newForeignPtrEnv finalizerFreeFlagged freed p
+           pure $ MArrayDouble sz freed p fp
+      Just defVal -> do
+        marr <- unsafeNew sz
+        unsafeLinearSet marr 0 (totalElem sz) defVal
+        pure marr
+  {-# INLINE initializeNew #-}
   unsafeLinearRead (MArrayDouble _ _ p fp) =
     unsafePrimToPrim . unsafeLinearForeignRead p fp
   {-# INLINE unsafeLinearRead #-}
@@ -377,4 +397,6 @@ foreign import ccall safe "m128d.c massiv_maximum__m128d"
 
 
 
-foreign import ccall unsafe "m128d.c &free_flagged" finalizerFreeFlagged :: FinalizerEnvPtr CBool a
+foreign import ccall unsafe "massiv.c &free_flagged" finalizerFreeFlagged :: FinalizerEnvPtr CBool a
+
+

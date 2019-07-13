@@ -26,6 +26,11 @@ spec = do
   unsafeMutableSpec @V @Ix3 @Double
   unsafeMutableSpec @V @Ix4 @Double
   unsafeMutableSpec @V @Ix5 @Double
+  unsafeMutableUnboxedSpec @V @Ix1 @Double
+  unsafeMutableUnboxedSpec @V @Ix2 @Double
+  unsafeMutableUnboxedSpec @V @Ix3 @Double
+  unsafeMutableUnboxedSpec @V @Ix4 @Double
+  unsafeMutableUnboxedSpec @V @Ix5 @Double
   let epsilon = 0.000000000001
   describe "Dot Product" $ do
     it "any" $

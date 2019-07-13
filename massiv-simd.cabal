@@ -16,7 +16,8 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Data.Massiv.Array.SIMD.Double
+  exposed-modules:     Data.Massiv.Array.ForeignArray
+                     , Data.Massiv.Array.SIMD.Double
                      , Data.Massiv.Array.SIMD.Internal
 
   other-modules:
@@ -33,7 +34,8 @@ library
                        -Wincomplete-uni-patterns
                        -Wredundant-constraints
   cc-options:          -Wall
-  c-sources:           cbits/m128d.c
+  c-sources:           cbits/massiv.c
+                     , cbits/m128d.c
 
 
 executable massiv-simd

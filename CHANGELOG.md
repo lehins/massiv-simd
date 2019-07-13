@@ -1,3 +1,5 @@
 # Changelog for massiv-simd
 
-## Unreleased changes
+## 0.1.0
+
+Initial release
