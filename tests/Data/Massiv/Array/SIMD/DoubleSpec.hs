@@ -1,7 +1,5 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -11,7 +9,7 @@ module Data.Massiv.Array.SIMD.DoubleSpec where
 import Data.Massiv.Array as A
 import Test.Massiv.Core
 import Test.Massiv.Core.Mutable
-import Data.Massiv.Array.SIMD.Double
+import Data.Massiv.Array.SIMD
 import qualified Data.Vector.Storable as VS
 
 instance (VS.Storable a, Arbitrary a) => Arbitrary (VS.Vector a) where

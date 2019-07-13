@@ -1,5 +1,5 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 -- |
@@ -21,10 +21,21 @@ module Data.Massiv.Array.ForeignArray
   , writeForeignArray
   , sliceForeignArray
   , extractForeignArray
+  -- ** Modifying
+  , setWithForeignArray
+  , copyWithForeignArray
+  -- ** Folding
+  , eqWithForeignArray
+  , foldWithForeignArray
+  , fold2WithForeignArray
+  -- ** Combining
+  , zipWithForeignArray
   ) where
 
-import Data.Massiv.Core.Index
+import Control.DeepSeq
+import Data.Coerce
 import Data.Massiv.Array.Unsafe (Sz(SafeSz))
+import Data.Massiv.Core.Index
 import Foreign.C
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
@@ -32,7 +43,6 @@ import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
 import Prelude hiding (mapM)
-import Control.DeepSeq
 
 #include "massiv.h"
 
@@ -179,3 +189,115 @@ withForeignArray (ForeignArray _ _ curPtr fptr) f =
 sizeForeignArray :: Index ix => ForeignArray ix e -> Sz1
 sizeForeignArray (ForeignArray sz _ _ _) = SafeSz (totalElem sz)
 {-# INLINE sizeForeignArray #-}
+
+
+setWithForeignArray ::
+     (Coercible a b, Storable a)
+  => (Ptr b -> CLong -> b -> IO e)
+  -> ForeignArray ix a
+  -> Ix1
+  -> Sz1
+  -> a
+  -> IO e
+setWithForeignArray setAction arr offset sz e =
+  withForeignArray arr $ \ptr ->
+    setAction
+      (coerce (advancePtr ptr offset))
+      (fromIntegral (unSz sz))
+      (coerce e)
+{-# INLINE setWithForeignArray #-}
+
+
+copyWithForeignArray ::
+     (Storable a, Coercible a b)
+  => (Ptr b -> Ptr b -> CLong -> IO ())
+  -> ForeignArray ix1 a
+  -> Ix1
+  -> ForeignArray ix2 a
+  -> Ix1
+  -> Sz1
+  -> IO ()
+copyWithForeignArray copyWith arrs iFrom arrd iTo (Sz k) =
+  withForeignArray arrs $ \ps ->
+    withForeignArray arrd $ \pd ->
+      copyWith (coerce (advancePtr ps iFrom)) (coerce (advancePtr pd iTo)) (fromIntegral k)
+{-# INLINE copyWithForeignArray #-}
+
+
+foldWithForeignArray ::
+     (Coercible a b, Index ix)
+  => (Ptr b -> CLong -> IO e)
+  -> ForeignArray ix a
+  -> IO e
+foldWithForeignArray foldAction arr =
+  withForeignArray arr $ \ptr ->
+    foldAction (coerce ptr) (fromIntegral (unSz (sizeForeignArray arr)))
+{-# INLINE foldWithForeignArray #-}
+
+
+fold2WithForeignArray ::
+     (Coercible a b, Index ix)
+  => (Ptr b -> Ptr b -> CLong -> IO e)
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO e
+fold2WithForeignArray foldAction arr1 arr2 =
+  withForeignArray arr1 $ \p1 ->
+    withForeignArray arr2 $ \p2 ->
+      foldAction
+        (coerce p1)
+        (coerce p2)
+        (fromIntegral
+           (unSz (sizeForeignArray arr1) `min` unSz (sizeForeignArray arr2)))
+{-# INLINE fold2WithForeignArray #-}
+
+eqWithForeignArray ::
+     (Coercible a b, Index ix)
+  => (Ptr b -> Ptr b -> CLong -> IO CBool)
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO Bool
+eqWithForeignArray eqAction arr1 arr2
+  | foreignArraySize arr1 /= foreignArraySize arr2 = pure False
+  | otherwise =
+    fold2WithForeignArray
+      (\p1 p2 _ ->
+         if p1 == p2
+           then pure True
+           else cboolToBool <$>
+                eqAction p1 p2 (fromIntegral (unSz (sizeForeignArray arr1))))
+      arr1
+      arr2
+{-# INLINE eqWithForeignArray #-}
+
+
+zipWithForeignArray ::
+     (Storable a, Index ix)
+  => (Ptr b -> Ptr b -> Ptr b -> CLong -> IO ())
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO (ForeignArray ix a)
+zipWithForeignArray zipWithAction arr1 arr2 = do
+  let sz =
+        SafeSz $
+        liftIndex2
+          min
+          (unSz (foreignArraySize arr1))
+          (unSz (foreignArraySize arr2))
+  resArr <- mallocForeignArray sz
+  withForeignArray arr1 $ \p1 ->
+    withForeignArray arr2 $ \p2 ->
+      withForeignArray resArr $ \pRes ->
+        zipWithAction
+          (coerce p1)
+          (coerce p2)
+          (coerce pRes)
+          (fromIntegral (totalElem sz))
+  pure resArr
+{-# INLINE zipWithForeignArray #-}
+
+
+
+cboolToBool :: CBool -> Bool
+cboolToBool = (/= 0)
+{-# INLINE cboolToBool #-}
