@@ -23,7 +23,8 @@ import Data.Massiv.Array.ForeignArray
 import Data.Massiv.Array.Unsafe
 import Data.Massiv.Core.List
 import Data.Massiv.Array.SIMD.Internal
-import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
+--import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
+import qualified Data.Massiv.Array.SIMD.Double.M256d as SIMD
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
 

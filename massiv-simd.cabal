@@ -21,6 +21,7 @@ library
 
   other-modules:       Data.Massiv.Array.SIMD.Double
                      , Data.Massiv.Array.SIMD.Double.M128d
+                     , Data.Massiv.Array.SIMD.Double.M256d
                      , Data.Massiv.Array.SIMD.Internal
   build-depends:       base >= 4.9 && < 5
                      , deepseq
@@ -34,9 +35,13 @@ library
                        -Wincomplete-record-updates
                        -Wincomplete-uni-patterns
                        -Wredundant-constraints
+                       -fno-warn-orphans
   cc-options:          -Wall
+                       -mavx
+  includes:            cbits/m128d.h
   c-sources:           cbits/massiv.c
                      , cbits/m128d.c
+                     , cbits/m256d.c
 
 
 executable massiv-simd

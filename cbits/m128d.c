@@ -1,6 +1,4 @@
-#include <emmintrin.h>
-#include <stdio.h>
-#include <stdbool.h>
+#include "m128d.h"
 
 inline double max_double(double num1, double num2){
   return (num1 > num2 ) ? num1 : num2;
@@ -11,9 +9,9 @@ inline double min_double(double num1, double num2){
 }
 
 // Copy the upper double-precision (64-bit) floating-point element of a to dst.
-inline double massiv__mm_cvtsd_f64u(const __m128d val){
-  return _mm_cvtsd_f64(_mm_castsi128_pd(_mm_srli_si128(_mm_castpd_si128(val), 8)));
-}
+/* double massiv__mm_cvtsd_f64u(const __m128d val){ */
+/*   return _mm_cvtsd_f64(_mm_castsi128_pd(_mm_srli_si128(_mm_castpd_si128(val), 8))); */
+/* } */
 
 /**
  * Compute the dot product of two vectors with doubles.

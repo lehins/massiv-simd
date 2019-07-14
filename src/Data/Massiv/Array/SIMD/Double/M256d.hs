@@ -6,14 +6,14 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 -- |
--- Module      : Data.Massiv.Array.SIMD.Double.M128d
+-- Module      : Data.Massiv.Array.SIMD.Double.M256d
 -- Copyright   : (c) Alexey Kuleshevich 2018-2019
 -- License     : BSD3
 -- Maintainer  : Alexey Kuleshevich <lehins@yandex.ru>
 -- Stability   : experimental
 -- Portability : non-portable
 --
-module Data.Massiv.Array.SIMD.Double.M128d where
+module Data.Massiv.Array.SIMD.Double.M256d where
 
 import Data.Massiv.Array.ForeignArray
 import Data.Massiv.Core.Index
@@ -23,7 +23,7 @@ import Data.Coerce
 
 
 dotDouble :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
-dotDouble = coerce . fold2WithForeignArray c_dot__m128d
+dotDouble = coerce . fold2WithForeignArray c_dot__m256d
 {-# INLINE dotDouble #-}
 
 eqDouble :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
@@ -68,8 +68,8 @@ foreign import ccall unsafe "m128d.c massiv_copy__m128d"
   c_copy__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
 
-foreign import ccall unsafe "m128d.c massiv_dot__m128d"
-  c_dot__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
+foreign import ccall unsafe "m256d.c massiv_dot__m256d"
+  c_dot__m256d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 foreign import ccall unsafe "m128d.c massiv_eq__m128d"
   c_eq__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CBool
