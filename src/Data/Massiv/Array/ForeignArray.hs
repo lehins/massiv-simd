@@ -13,9 +13,15 @@
 module Data.Massiv.Array.ForeignArray
   ( ForeignArray(..)
   , sizeForeignArray
+  -- * Memory allocation
   , mallocForeignArray
   , callocForeignArray
   , reallocForeignArray
+  -- * Aligned memory allocation
+  , mallocAlignedForeignArray
+  , callocAlignedForeignArray
+  -- , reallocAlignedForeignArray
+
   , withForeignArray
   , readForeignArray
   , writeForeignArray
@@ -74,9 +80,9 @@ data ForeignArray ix e = ForeignArray
 
 foreign import ccall unsafe "massiv.c &free_flagged" finalizerFreeFlagged :: FinalizerEnvPtr CBool a
 
+
 instance NFData ix => NFData (ForeignArray ix e) where
   rnf (ForeignArray sz flag ptr fptr) = sz `deepseq` flag `deepseq` ptr `deepseq` fptr `seq` ()
-
 
 -- | Allocate an array, but do not initialize any elements.
 --
@@ -105,17 +111,18 @@ allocForeignArray allocArray sz = do
   pure $ ForeignArray sz freed ptr fptr
 {-# INLINE allocForeignArray #-}
 
+
 -- | Shrink or grow an array.
 --
 -- @since 0.1.0
 reallocForeignArray ::
-     (Index ix, Storable e)
-  => ForeignArray ix e
+     forall ix' ix e . (Index ix, Storable e)
+  => ForeignArray ix' e
   -> Sz ix -- ^ New size. Can be bigger or smaller
   -> IO (ForeignArray ix e)
 reallocForeignArray (ForeignArray _sz freed curPtr fptr) newsz =
   withForeignPtr fptr $ \ptr -> do
-    let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: Double)
+    let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: e)
     rPtr <- reallocArray ptr (offset + totalElem newsz)
     if rPtr == ptr
       then pure $ ForeignArray newsz freed curPtr fptr
@@ -125,6 +132,69 @@ reallocForeignArray (ForeignArray _sz freed curPtr fptr) newsz =
         fp' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
         pure $ ForeignArray newsz freed' (advancePtr rPtr offset) fp'
 {-# INLINE reallocForeignArray #-}
+
+-------------
+-- Aligned --
+-------------
+
+-- | Allocate an array, but do not initialize any elements.
+--
+-- @since 0.1.0
+mallocAlignedForeignArray ::
+  (Storable e, Index ix) => Sz ix -> Int -> IO (ForeignArray ix e)
+mallocAlignedForeignArray = allocAlignedForeignArray mallocBytes
+{-# INLINE mallocAlignedForeignArray #-}
+
+
+-- | Allocate an array, but do not initialize any elements.
+--
+-- @since 0.1.0
+callocAlignedForeignArray ::
+  (Storable e, Index ix) => Sz ix -> Int -> IO (ForeignArray ix e)
+callocAlignedForeignArray = allocAlignedForeignArray mallocBytes
+{-# INLINE callocAlignedForeignArray #-}
+
+
+allocAlignedForeignArray ::
+     forall ix e. (Storable e, Index ix)
+  => (Int -> IO (Ptr e))
+  -> Sz ix
+  -> Int
+  -> IO (ForeignArray ix e)
+allocAlignedForeignArray allocBytes sz align = do
+  ptr <- allocBytes (sizeOf (undefined :: e) * totalElem sz + align - 1)
+  freed <- calloc
+  fptr <- newForeignPtrEnv finalizerFreeFlagged freed ptr
+  pure $ ForeignArray sz freed (alignPtr ptr align) fptr
+{-# INLINE allocAlignedForeignArray #-}
+
+
+-- -- | Shrink or grow an array.
+-- --
+-- -- @since 0.1.0
+-- reallocAlignedForeignArray ::
+--      forall ix' ix e. (Index ix', Index ix, Storable e)
+--   => ForeignArray ix' e
+--   -> Sz ix -- ^ New size. Can be bigger or smaller
+--   -> Int
+--   -> IO (ForeignArray ix e)
+-- reallocAlignedForeignArray (ForeignArray oldsz freed curPtr fptr) newsz align
+--   | oldk == newk
+--   withForeignPtr fptr $ \ptr -> do
+--     let esize = sizeOf (undefined :: e)
+--     let offset = curPtr `minusPtr` ptr
+--     rPtr <- reallocBytes ptr (offset + totalElem newsz * esize)
+--     if rPtr == ptr
+--       then pure $ ForeignArray newsz freed curPtr fptr
+--       else do
+--         poke freed 1
+--         freed' <- calloc
+--         fp' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
+--         pure $ ForeignArray newsz freed' (advancePtr rPtr offset) fp'
+--   where
+--     oldk = totalElem oldsz
+--     newk = totalElem newsz
+-- {-# INLINE reallocAlignedForeignArray #-}
 
 
 -- | Read en element from an array at a linear index. No bounds checking is performed.
@@ -250,6 +320,7 @@ fold2WithForeignArray foldAction arr1 arr2 =
         (fromIntegral
            (unSz (sizeForeignArray arr1) `min` unSz (sizeForeignArray arr2)))
 {-# INLINE fold2WithForeignArray #-}
+
 
 eqWithForeignArray ::
      (Coercible a b, Index ix)

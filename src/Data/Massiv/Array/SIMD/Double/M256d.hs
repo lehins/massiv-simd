@@ -22,6 +22,9 @@ import Foreign.Ptr (Ptr)
 import Data.Coerce
 
 
+doubleAlignment :: Int
+doubleAlignment = 32
+
 dotDouble :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
 dotDouble = coerce . fold2WithForeignArray c_dot__m256d
 {-# INLINE dotDouble #-}

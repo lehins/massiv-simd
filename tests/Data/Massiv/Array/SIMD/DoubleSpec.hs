@@ -40,6 +40,10 @@ spec = do
             x = mat !> i
             y = matP !> i
          in epsilonEq epsilon (dotDouble x x) (A.sum (A.zipWith (*) y y))
+    it "misaligned" $
+      property $ \(ArrNE x :: ArrNE V Ix1 Double) (y :: Array V Ix1 Double) ->
+        let x' = extract' 1 (Sz (unSz (size x) - 1)) x
+        in epsilonEq epsilon (dotDouble x' y) (A.sum (A.zipWith (*) x' y))
   describe "OuterSlice" $
     it "V vs P" $
     property $ \(ArrIx mat (i :. _)) ->

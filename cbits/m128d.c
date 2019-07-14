@@ -13,6 +13,7 @@ inline double min_double(double num1, double num2){
 /*   return _mm_cvtsd_f64(_mm_castsi128_pd(_mm_srli_si128(_mm_castpd_si128(val), 8))); */
 /* } */
 
+
 /**
  * Compute the dot product of two vectors with doubles.
  */
@@ -31,6 +32,22 @@ double massiv_dot__m128d(const double vec1[], const double vec2[], const long le
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
 }
+
+/* double massiv_dot__m128d_aligned(const double vec1[], const double vec2[], const long len) { */
+/*   __m128d acc128d = _mm_setzero_pd(); */
+/*   double acc; */
+/*   long rest = len % 2; */
+
+/*   for (int i = 0; i < len - rest; i += 2) { */
+/*     __m128d vi1 = _mm_load_pd(vec1 + i); */
+/*     __m128d vi2 = _mm_load_pd(vec2 + i); */
+/*     acc128d = _mm_add_pd(acc128d, _mm_mul_pd(vi1, vi2)); */
+/*   } */
+/*   acc = _mm_cvtsd_f64(acc128d) + massiv__mm_cvtsd_f64u(acc128d); */
+/*   if (rest != 0) */
+/*     acc = acc + vec1[len-1] * vec2[len-1]; */
+/*   return acc; */
+/* } */
 
 /**
  * Set all elements of the vector to the same value
