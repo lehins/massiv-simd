@@ -25,7 +25,7 @@ module Data.Massiv.Array.ForeignArray
   , mallocAlignedForeignArray
   , callocAlignedForeignArray
   -- , reallocAlignedForeignArray
-
+  , isSameForeignArray
   , withForeignArray
   , readForeignArray
   , writeForeignArray
@@ -45,6 +45,7 @@ module Data.Massiv.Array.ForeignArray
 import Control.Monad.Primitive
 import Control.DeepSeq
 import Data.Coerce
+import Data.Primitive.ByteArray
 import Data.Massiv.Array.Unsafe (Sz(SafeSz))
 import Data.Massiv.Core.Index
 import Foreign.C
@@ -86,9 +87,6 @@ data ForeignArray ix e = ForeignArray
 
 
 foreign import ccall unsafe "massiv.c &free_flagged" finalizerFreeFlagged :: FinalizerEnvPtr CBool a
-
-foreign import ccall safe "massiv.c memcpy"
-  c_memcpy :: Ptr a -> Ptr a -> CSize -> IO ()
 
 
 instance NFData ix => NFData (ForeignArray ix e) where
@@ -135,80 +133,72 @@ allocForeignArray allocArray sz = do
 {-# INLINE allocForeignArray #-}
 
 
--- | Shrink or grow an array. Returns resized array and a boolean flag, which when `True`,
--- means the full copy occured and the old array should not be used.
+-- | Shrink or grow an array. If you need to check if the new array has been created or
+-- the same one has been resized use `isSameForeignArray`
 --
 -- __Important__ - Growing might require a full copy to a new memory location, but
--- regardless of copy the new extra allocated area will not be initialized. More
--- importantly the old `ForeignArray` should not be used.
+-- regardless if it was copied or not the new extra allocated area will not be
+-- initialized. Most important is the old `ForeignArray` should not be used, unless
+-- `isSameForeignArray` is `True` when appied to the argument and the result.
 --
 -- @since 0.1.0
 reallocForeignArray ::
      forall ix' ix e . (Index ix', Index ix, Storable e)
   => ForeignArray ix' e
   -> Sz ix -- ^ New size. Can be bigger or smaller
-  -> IO (Bool, ForeignArray ix e)
-reallocForeignArray (ForeignArray sz freed curPtr fptr@(ForeignPtr _ c)) newsz =
-  withForeignPtr fptr $ \ptr ->
-    let !offsetBytes@(I# offsetBytes#) = curPtr `minusPtr` ptr
-        !elementSize = sizeOf (undefined :: e)
-        !offset = offsetBytes `div` elementSize
-        !oldLength = totalElem sz
-        !newLength = totalElem newsz
-        !newFullLength = newLength + offset
-        !newByteSize@(I# newByteSize#) = newLength * elementSize
-        !(I# newFullByteSize#) = newByteSize + offsetBytes
-        -- shrinkMutableByteArray mba# = do
-        --   primitive_ (shrinkMutableByteArray# mba# newFullLength#)
-        --   pure (False, ForeignArray newsz freed curPtr fptr)
-        -- growMutableByteArray alloc mba# = do
-        --   primitive_ (shrinkMutableByteArray# mba# newFullLength#)
-        --   pure (False, ForeignArray newsz freed curPtr fptr)
-        reallocMutableByteArray alloc src#
-          | newLength <= oldLength = do
-            primitive_ (shrinkMutableByteArray# src# newFullByteSize#)
-            pure (False, ForeignArray newsz freed curPtr fptr)
-          | otherwise = do
-            arr <- mallocForeignArray newsz
-            withForeignArray arr $ \ptr' ->
-              copyArray ptr' curPtr newLength
-            pure (True, arr)
-            -- fptr'@(ForeignPtr ptr# _) <- alloc newByteSize (alignment (undefined :: e))
-            -- withForeignPtr fptr' $ \ptr' -> moveArray ptr' curPtr newLength
-            -- case c' of
-            --   MallocPtr dst# _ ->
-            --     moveByteArray
-            --       (MutableByteArray dst#)
-            --       0
-            --       (MutableByteArray src#)
-            --       offsetBytes
-            --       newByteSize
-            --   PlainPtr dst# ->
-            --     moveByteArray
-            --       (MutableByteArray dst#)
-            --       0
-            --       (MutableByteArray src#)
-            --       offsetBytes
-            --       newByteSize
-            -- withForeignPtr fptr' $ \ptr'@(Ptr addr#)
-            --   -- primitive_ (copyMutableByteArrayToAddr# mba# offsetBytes# addr# newByteSize#)
-            --  -> c_memcpy ptr' curPtr (fromIntegral newByteSize)
-            --pure (True, ForeignArray newsz nullPtr (Ptr ptr#) fptr')
-     in case c of
-          _
-            | newLength == oldLength -> pure (False, ForeignArray newsz freed curPtr fptr)
-          PlainForeignPtr _ -> do
-            rPtr <- reallocArray ptr newFullLength
-            if rPtr == ptr -- shrunk or grew without copy, so we can keep the same `fptr`
-              then pure (False, ForeignArray newsz freed curPtr fptr)
-              else do
-                poke freed 1
-                freed' <- calloc
-                fptr' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
-                pure (True, ForeignArray newsz freed' (advancePtr rPtr offset) fptr')
-          MallocPtr mba# _ -> reallocMutableByteArray mallocForeignPtrAlignedBytes mba#
-          PlainPtr mba# -> reallocMutableByteArray mallocPlainForeignPtrAlignedBytes mba#
+  -> IO (ForeignArray ix e)
+reallocForeignArray (ForeignArray sz freed curPtr fptr@(ForeignPtr _ c)) newsz
+  | newLength == oldLength = pure (ForeignArray newsz freed curPtr fptr)
+  | otherwise =
+    withForeignPtr fptr $ \ptr ->
+      let !offsetBytes@(I# offsetBytes#) = curPtr `minusPtr` ptr
+          elementSize = sizeOf (undefined :: e)
+          offset = offsetBytes `div` elementSize
+          reallocMutableByteArray alloc mba#
+            | newLength <= oldLength = do
+              let !(I# newFullByteSize#) = newByteSize + offsetBytes
+              primitive_ (shrinkMutableByteArray# mba# newFullByteSize#)
+              pure (ForeignArray newsz freed curPtr fptr)
+            | otherwise = do
+              let !(I# oldByteSize#) = oldLength * elementSize
+              fptr'@(ForeignPtr ptr# _) <- alloc newByteSize (alignment (undefined :: e))
+              -- We can't grow pinned memory in ghc, so we are left with manual create new
+              -- and copy appraoch.
+              withForeignPtr fptr' $ \(Ptr addr#) ->
+                primitive_ (copyMutableByteArrayToAddr# mba# offsetBytes# addr# oldByteSize#)
+              pure (ForeignArray newsz nullPtr (Ptr ptr#) fptr')
+            where
+              !newByteSize = newLength * elementSize
+       in case c of
+            PlainForeignPtr _ -> do
+              rPtr <- reallocArray ptr (newLength + offset)
+              if rPtr == ptr -- shrunk or grew without copy, so we can keep the same `fptr`
+                then pure (ForeignArray newsz freed curPtr fptr)
+                else do
+                  poke freed 1
+                  freed' <- calloc
+                  fptr' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
+                  pure (ForeignArray newsz freed' (advancePtr rPtr offset) fptr')
+            MallocPtr mba# _ -> reallocMutableByteArray mallocForeignPtrAlignedBytes mba#
+            PlainPtr mba# -> reallocMutableByteArray mallocPlainForeignPtrAlignedBytes mba#
+  where
+    !oldLength = totalElem sz
+    !newLength = totalElem newsz
 {-# INLINE reallocForeignArray #-}
+
+-- | Check if two foreign arrays refer to the same memory block.
+--
+-- @since 0.1.0
+isSameForeignArray :: ForeignArray ix1 e1 -> ForeignArray ix2 e2 -> Bool
+isSameForeignArray (ForeignArray _ _ _ (ForeignPtr p1 c1)) (ForeignArray _ _ _ (ForeignPtr p2 c2)) =
+  case (c1, c2) of
+    (PlainForeignPtr _, PlainForeignPtr _) -> Ptr p1 == Ptr p2
+    (MallocPtr mba1# _, MallocPtr mba2# _) ->
+      sameMutableByteArray (MutableByteArray mba1#) (MutableByteArray mba2#)
+    (PlainPtr mba1#, PlainPtr mba2#) ->
+      sameMutableByteArray (MutableByteArray mba1#) (MutableByteArray mba2#)
+    _ -> False
+{-# INLINE isSameForeignArray #-}
 
 -------------
 -- Aligned --

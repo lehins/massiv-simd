@@ -137,10 +137,10 @@ instance Index ix => Mutable V ix Double where
     unsafeLinearCopy marrFrom iFrom marrTo iTo sz
   {-# INLINE unsafeArrayLinearCopy #-}
   unsafeLinearShrink (MArrayDouble arr) =
-    fmap (MArrayDouble . snd) . unsafePrimToPrim . reallocForeignArray arr
+    fmap MArrayDouble . unsafePrimToPrim . reallocForeignArray arr
   {-# INLINE unsafeLinearShrink #-}
   unsafeLinearGrow (MArrayDouble arr) =
-    fmap (MArrayDouble . snd) . unsafePrimToPrim . reallocForeignArray arr
+    fmap MArrayDouble . unsafePrimToPrim . reallocForeignArray arr
   {-# INLINE unsafeLinearGrow #-}
 
 dotDouble :: Index ix => Array V ix Double -> Array V ix Double -> Double
