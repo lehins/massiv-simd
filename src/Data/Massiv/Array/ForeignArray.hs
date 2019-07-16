@@ -1,5 +1,7 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 -- |
@@ -14,10 +16,12 @@ module Data.Massiv.Array.ForeignArray
   ( ForeignArray(..)
   , sizeForeignArray
   -- * Memory allocation
+  , newForeignArray
   , mallocForeignArray
   , callocForeignArray
   , reallocForeignArray
   -- * Aligned memory allocation
+  , newAlignedForeignArray
   , mallocAlignedForeignArray
   , callocAlignedForeignArray
   -- , reallocAlignedForeignArray
@@ -38,26 +42,24 @@ module Data.Massiv.Array.ForeignArray
   , zipWithForeignArray
   ) where
 
+import Control.Monad.Primitive
 import Control.DeepSeq
 import Data.Coerce
 import Data.Massiv.Array.Unsafe (Sz(SafeSz))
 import Data.Massiv.Core.Index
 import Foreign.C
 import Foreign.ForeignPtr
+import GHC.ForeignPtr
+import GHC.Ptr
+import GHC.Exts
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
-import Foreign.Ptr
+--import Foreign.Ptr
 import Foreign.Storable
 import Prelude hiding (mapM)
 
 #include "massiv.h"
 
--- TODO: switch to:
--- ForeignArray    !(Sz ix)
---  {-# UNPACK #-} !(Ptr CBool) -- flag for freeing
---  {-# UNPACK #-} !(Ptr e) -- beinning of data
---  {-# UNPACK #-} !(Ptr e) -- freeable pointer
---                 !(IORef Finalizers) {- extracted from PlainForeignPtr -}
 data ForeignArray ix e = ForeignArray
   { foreignArraySize       :: !(Sz ix)
   -- ^ Size of the array. Can be less than the actual memory allocated
@@ -85,19 +87,35 @@ data ForeignArray ix e = ForeignArray
 
 foreign import ccall unsafe "massiv.c &free_flagged" finalizerFreeFlagged :: FinalizerEnvPtr CBool a
 
+foreign import ccall safe "massiv.c memcpy"
+  c_memcpy :: Ptr a -> Ptr a -> CSize -> IO ()
+
 
 instance NFData ix => NFData (ForeignArray ix e) where
-  rnf (ForeignArray sz flag ptr fptr) = sz `deepseq` flag `deepseq` ptr `deepseq` fptr `seq` ()
+  rnf (ForeignArray sz flag ptr (ForeignPtr _ c)) =
+    sz `deepseq` flag `deepseq` ptr `deepseq` c `seq` ()
 
--- | Allocate an array, but do not initialize any elements.
+
+
+-- | Allocate pinned memory for the array on the GHC heap, but do not initialize any
+-- elements.
+--
+-- @since 0.1.0
+newForeignArray ::
+     forall e ix. (Storable e, Index ix) => Sz ix -> IO (ForeignArray ix e)
+newForeignArray sz = newAlignedForeignArray sz (alignment (undefined :: e))
+{-# INLINE newForeignArray #-}
+
+-- | Allocate an array using @malloc@, but do not initialize any elements.
 --
 -- @since 0.1.0
 mallocForeignArray ::
-     (Storable e, Index ix) => Sz ix -> IO (ForeignArray ix e)
+     forall e ix. (Storable e, Index ix) => Sz ix -> IO (ForeignArray ix e)
 mallocForeignArray = allocForeignArray mallocArray
 {-# INLINE mallocForeignArray #-}
 
--- | Allocate an array and initialize all elements to zero
+
+-- | Allocate an array using @calloc@, thus also initialize all elements to zero
 --
 -- @since 0.1.0
 callocForeignArray ::
@@ -117,30 +135,97 @@ allocForeignArray allocArray sz = do
 {-# INLINE allocForeignArray #-}
 
 
--- | Shrink or grow an array.
+-- | Shrink or grow an array. Returns resized array and a boolean flag, which when `True`,
+-- means the full copy occured and the old array should not be used.
+--
+-- __Important__ - Growing might require a full copy to a new memory location, but
+-- regardless of copy the new extra allocated area will not be initialized. More
+-- importantly the old `ForeignArray` should not be used.
 --
 -- @since 0.1.0
 reallocForeignArray ::
-     forall ix' ix e . (Index ix, Storable e)
+     forall ix' ix e . (Index ix', Index ix, Storable e)
   => ForeignArray ix' e
   -> Sz ix -- ^ New size. Can be bigger or smaller
-  -> IO (ForeignArray ix e)
-reallocForeignArray (ForeignArray _sz freed curPtr fptr) newsz =
-  withForeignPtr fptr $ \ptr -> do
-    let offset = (curPtr `minusPtr` ptr) `div` sizeOf (undefined :: e)
-    rPtr <- reallocArray ptr (offset + totalElem newsz)
-    if rPtr == ptr
-      then pure $ ForeignArray newsz freed curPtr fptr
-      else do
-        poke freed 1
-        freed' <- calloc
-        fp' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
-        pure $ ForeignArray newsz freed' (advancePtr rPtr offset) fp'
+  -> IO (Bool, ForeignArray ix e)
+reallocForeignArray (ForeignArray sz freed curPtr fptr@(ForeignPtr _ c)) newsz =
+  withForeignPtr fptr $ \ptr ->
+    let !offsetBytes@(I# offsetBytes#) = curPtr `minusPtr` ptr
+        !elementSize = sizeOf (undefined :: e)
+        !offset = offsetBytes `div` elementSize
+        !oldLength = totalElem sz
+        !newLength = totalElem newsz
+        !newFullLength = newLength + offset
+        !newByteSize@(I# newByteSize#) = newLength * elementSize
+        !(I# newFullByteSize#) = newByteSize + offsetBytes
+        -- shrinkMutableByteArray mba# = do
+        --   primitive_ (shrinkMutableByteArray# mba# newFullLength#)
+        --   pure (False, ForeignArray newsz freed curPtr fptr)
+        -- growMutableByteArray alloc mba# = do
+        --   primitive_ (shrinkMutableByteArray# mba# newFullLength#)
+        --   pure (False, ForeignArray newsz freed curPtr fptr)
+        reallocMutableByteArray alloc src#
+          | newLength <= oldLength = do
+            primitive_ (shrinkMutableByteArray# src# newFullByteSize#)
+            pure (False, ForeignArray newsz freed curPtr fptr)
+          | otherwise = do
+            arr <- mallocForeignArray newsz
+            withForeignArray arr $ \ptr' ->
+              copyArray ptr' curPtr newLength
+            pure (True, arr)
+            -- fptr'@(ForeignPtr ptr# _) <- alloc newByteSize (alignment (undefined :: e))
+            -- withForeignPtr fptr' $ \ptr' -> moveArray ptr' curPtr newLength
+            -- case c' of
+            --   MallocPtr dst# _ ->
+            --     moveByteArray
+            --       (MutableByteArray dst#)
+            --       0
+            --       (MutableByteArray src#)
+            --       offsetBytes
+            --       newByteSize
+            --   PlainPtr dst# ->
+            --     moveByteArray
+            --       (MutableByteArray dst#)
+            --       0
+            --       (MutableByteArray src#)
+            --       offsetBytes
+            --       newByteSize
+            -- withForeignPtr fptr' $ \ptr'@(Ptr addr#)
+            --   -- primitive_ (copyMutableByteArrayToAddr# mba# offsetBytes# addr# newByteSize#)
+            --  -> c_memcpy ptr' curPtr (fromIntegral newByteSize)
+            --pure (True, ForeignArray newsz nullPtr (Ptr ptr#) fptr')
+     in case c of
+          _
+            | newLength == oldLength -> pure (False, ForeignArray newsz freed curPtr fptr)
+          PlainForeignPtr _ -> do
+            rPtr <- reallocArray ptr newFullLength
+            if rPtr == ptr -- shrunk or grew without copy, so we can keep the same `fptr`
+              then pure (False, ForeignArray newsz freed curPtr fptr)
+              else do
+                poke freed 1
+                freed' <- calloc
+                fptr' <- newForeignPtrEnv finalizerFreeFlagged freed' rPtr
+                pure (True, ForeignArray newsz freed' (advancePtr rPtr offset) fptr')
+          MallocPtr mba# _ -> reallocMutableByteArray mallocForeignPtrAlignedBytes mba#
+          PlainPtr mba# -> reallocMutableByteArray mallocPlainForeignPtrAlignedBytes mba#
 {-# INLINE reallocForeignArray #-}
 
 -------------
 -- Aligned --
 -------------
+
+-- | Same as `newForeignArray`, but with ability to specify custom alignment.
+--
+-- @since 0.1.0
+newAlignedForeignArray ::
+     forall e ix. (Storable e, Index ix) => Sz ix -> Int -> IO (ForeignArray ix e)
+newAlignedForeignArray sz align = do
+  let dummy = undefined :: e
+  fptr@(ForeignPtr ptr# _) <-
+    mallocPlainForeignPtrAlignedBytes (totalElem sz * sizeOf dummy) align
+  pure $ ForeignArray sz nullPtr (Ptr ptr#) fptr
+{-# INLINE newAlignedForeignArray #-}
+
 
 -- | Allocate an array, but do not initialize any elements.
 --
@@ -340,8 +425,7 @@ eqWithForeignArray eqAction arr1 arr2
       (\p1 p2 _ ->
          if p1 == p2
            then pure True
-           else cboolToBool <$>
-                eqAction p1 p2 (fromIntegral (unSz (sizeForeignArray arr1))))
+           else cboolToBool <$> eqAction p1 p2 (fromIntegral (unSz (sizeForeignArray arr1))))
       arr1
       arr2
 {-# INLINE eqWithForeignArray #-}
@@ -354,21 +438,12 @@ zipWithForeignArray ::
   -> ForeignArray ix a
   -> IO (ForeignArray ix a)
 zipWithForeignArray zipWithAction arr1 arr2 = do
-  let sz =
-        SafeSz $
-        liftIndex2
-          min
-          (unSz (foreignArraySize arr1))
-          (unSz (foreignArraySize arr2))
+  let sz = SafeSz $ liftIndex2 min (unSz (foreignArraySize arr1)) (unSz (foreignArraySize arr2))
   resArr <- mallocForeignArray sz
   withForeignArray arr1 $ \p1 ->
     withForeignArray arr2 $ \p2 ->
       withForeignArray resArr $ \pRes ->
-        zipWithAction
-          (coerce p1)
-          (coerce p2)
-          (coerce pRes)
-          (fromIntegral (totalElem sz))
+        zipWithAction (coerce p1) (coerce p2) (coerce pRes) (fromIntegral (totalElem sz))
   pure resArr
 {-# INLINE zipWithForeignArray #-}
 

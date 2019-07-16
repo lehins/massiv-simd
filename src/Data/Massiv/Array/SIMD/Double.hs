@@ -109,23 +109,22 @@ instance Index ix => Mutable V ix Double where
   {-# INLINE unsafeThaw #-}
   unsafeFreeze comp (MArrayDouble arr) = pure $ VArray comp arr
   {-# INLINE unsafeFreeze #-}
-  unsafeNew sz = unsafePrimToPrim (MArrayDouble <$> mallocForeignArray sz)
+  unsafeNew sz = unsafePrimToPrim (MArrayDouble <$> newForeignArray sz)
   {-# INLINE unsafeNew #-}
   initialize (MArrayDouble arr) =
     unsafePrimToPrim $ SIMD.broadcastDouble arr 0 (sizeForeignArray arr) 0
   {-# INLINE initialize #-}
-  initializeNew mDef sz =
-    case mDef of
-      Nothing -> unsafePrimToPrim (MArrayDouble <$> callocForeignArray sz)
-      Just defVal -> do
-        marr <- unsafeNew sz
-        unsafeLinearSet marr 0 (totalElem sz) defVal
-        pure marr
-  {-# INLINE initializeNew #-}
+  -- initializeNew mDef sz =
+  --   case mDef of
+  --     Nothing -> unsafePrimToPrim (MArrayDouble <$> callocForeignArray sz)
+  --     Just defVal -> do
+  --       marr <- unsafeNew sz
+  --       unsafeLinearSet marr 0 (totalElem sz) defVal
+  --       pure marr
+  -- {-# INLINE initializeNew #-}
   unsafeLinearRead (MArrayDouble arr) = unsafePrimToPrim . readForeignArray arr
   {-# INLINE unsafeLinearRead #-}
-  unsafeLinearWrite (MArrayDouble arr) i =
-    unsafePrimToPrim . writeForeignArray arr i
+  unsafeLinearWrite (MArrayDouble arr) i = unsafePrimToPrim . writeForeignArray arr i
   {-# INLINE unsafeLinearWrite #-}
   unsafeLinearSet (MArrayDouble arr) offset len =
     unsafePrimToPrim . SIMD.broadcastDouble arr offset (Sz len)
@@ -138,10 +137,10 @@ instance Index ix => Mutable V ix Double where
     unsafeLinearCopy marrFrom iFrom marrTo iTo sz
   {-# INLINE unsafeArrayLinearCopy #-}
   unsafeLinearShrink (MArrayDouble arr) =
-    fmap MArrayDouble . unsafePrimToPrim . reallocForeignArray arr
+    fmap (MArrayDouble . snd) . unsafePrimToPrim . reallocForeignArray arr
   {-# INLINE unsafeLinearShrink #-}
   unsafeLinearGrow (MArrayDouble arr) =
-    fmap MArrayDouble . unsafePrimToPrim . reallocForeignArray arr
+    fmap (MArrayDouble . snd) . unsafePrimToPrim . reallocForeignArray arr
   {-# INLINE unsafeLinearGrow #-}
 
 dotDouble :: Index ix => Array V ix Double -> Array V ix Double -> Double
