@@ -52,7 +52,12 @@ import Prelude hiding (mapM)
 
 #include "massiv.h"
 
-
+-- TODO: switch to:
+-- ForeignArray    !(Sz ix)
+--  {-# UNPACK #-} !(Ptr CBool) -- flag for freeing
+--  {-# UNPACK #-} !(Ptr e) -- beinning of data
+--  {-# UNPACK #-} !(Ptr e) -- freeable pointer
+--                 !(IORef Finalizers) {- extracted from PlainForeignPtr -}
 data ForeignArray ix e = ForeignArray
   { foreignArraySize       :: !(Sz ix)
   -- ^ Size of the array. Can be less than the actual memory allocated
