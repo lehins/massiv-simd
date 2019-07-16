@@ -27,8 +27,6 @@ import Prelude hiding (mapM)
 -- | Representation for arrays with SIMD vectorizable elements
 data V = V deriving Show
 
-type instance EltRepr V ix = V
-
 data instance Array V ix e = VArray
   { vComp  :: !Comp
   , vArray :: !(ForeignArray ix e)

@@ -173,3 +173,38 @@ double massiv_maximum__m128d(const double vec[], const long len) {
     return max_double(result, vec[len - 1]);
   return result;
 }
+
+//double massiv_minimum__m128d(const double vec[], const long len) {
+//bool massiv_elem__m128d(const double vec[], const double, const long len) {
+
+//double massiv_sqrt__m128d(const double vec[], const long len);
+
+//void massiv_minus__m128d(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_times__m128d(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_divide__m128d(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_and__m128d(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_or__m128d(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_nand__m128d(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_xor__m128d(const double vec1[], const double vec2[], double res[], const long len);
+
+
+//double massiv_add__m128d(const double vec[], const double x, const long len);
+//double massiv_sub__m128d(const double vec[], const double x, const long len);
+//double massiv_mul__m128d(const double vec[], const double x, const long len);
+//double massiv_div__m128d(const double vec[], const double x, const long len);
+//double massiv_pow__m128d(const double vec[], const unsigned int x, const long len);
+
+//double massiv_ceil__m128d(const double vec[], const double x, const long len);
+//double massiv_floor__m128d(const double vec[], const double x, const long len);
+
+
+// less important
+
+//bool massiv_lt__m128d(const double vec1[], const double vec2[], const long len);
+//bool massiv_le__m128d(const double vec1[], const double vec2[], const long len);
+//bool massiv_gt__m128d(const double vec1[], const double vec2[], const long len);
+//bool massiv_ge__m128d(const double vec1[], const double vec2[], const long len);
+
+
+
+

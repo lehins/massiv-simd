@@ -22,6 +22,7 @@ import Data.Massiv.Array as A
 import Data.Massiv.Array.ForeignArray
 import Data.Massiv.Array.Unsafe
 import Data.Massiv.Core.List
+import Data.Massiv.Core.Operations
 import Data.Massiv.Array.SIMD.Internal
 --import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
 import qualified Data.Massiv.Array.SIMD.Double.M256d as SIMD
@@ -75,12 +76,12 @@ instance Index ix => Load V ix Double where
   {-# INLINE loadArrayM #-}
 
 instance (Storable e, Load V ix e) => Source V ix e where
-  unsafeLinearIndex (VArray _ arr) = unsafePerformIO . readForeignArray arr
+  unsafeLinearIndex (VArray _ arr) = unsafeInlineIO . readForeignArray arr
   {-# INLINE unsafeLinearIndex #-}
 
 
 instance (Storable e, Load V ix e) => Manifest V ix e where
-  unsafeLinearIndexM (VArray _ arr) = unsafePerformIO . readForeignArray arr
+  unsafeLinearIndexM (VArray _ arr) = unsafeInlineIO . readForeignArray arr
   {-# INLINE unsafeLinearIndexM #-}
 
 
@@ -143,8 +144,6 @@ instance Index ix => Mutable V ix Double where
     fmap MArrayDouble . unsafePrimToPrim . reallocForeignArray arr
   {-# INLINE unsafeLinearGrow #-}
 
-
-
 dotDouble :: Index ix => Array V ix Double -> Array V ix Double -> Double
 dotDouble (VArray _ arr1) (VArray _ arr2) = unsafePerformIO $ SIMD.dotDouble arr1 arr2
 {-# INLINE dotDouble #-}
@@ -203,3 +202,35 @@ maximumDouble (VArray _ arr) = unsafePerformIO $ SIMD.maximumDouble arr
 -- broadcastDouble (VArray _ arr) offset k e =
 --     unsafePerformIO $ SIMD.broadcastDouble arr offset k e
 -- {-# INLINE broadcastDouble #-}
+
+
+instance Numeric V Double where
+  sumArray _ = sumDouble
+  {-# INLINE sumArray #-}
+  productArray _ = productDouble
+  {-# INLINE productArray #-}
+  dotProduct _ = dotDouble
+  {-# INLINE dotProduct #-}
+  -- minusElementArray arr e = liftDArray (subtract e) arr
+  -- {-# INLINE minusElementArray #-}
+  -- multiplyElementArray arr e = liftDArray (* e) arr
+  -- {-# INLINE multiplyElementArray #-}
+  -- absPointwise = liftDArray abs
+  -- {-# INLINE absPointwise #-}
+  additionPointwise = plusDouble
+  {-# INLINE additionPointwise #-}
+
+
+instance (Numeric V e, Mutable V ix e, Storable e) => Num (Array V ix e) where
+  (+) = additionPointwise
+  {-# INLINE (+) #-}
+  (-) = subtractionPointwise
+  {-# INLINE (-) #-}
+  (*) = multiplicationPointwise
+  {-# INLINE (*) #-}
+  abs = absPointwise
+  {-# INLINE abs #-}
+  signum = A.compute . A.map signum
+  {-# INLINE signum #-}
+  fromInteger = singleton . fromInteger
+  {-# INLINE fromInteger #-}
