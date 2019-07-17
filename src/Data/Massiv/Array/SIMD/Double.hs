@@ -17,15 +17,17 @@
 module Data.Massiv.Array.SIMD.Double where
 
 import Control.DeepSeq
+import Control.Monad (when)
 import Control.Monad.Primitive
+import Control.Scheduler
 import Data.Massiv.Array as A
 import Data.Massiv.Array.ForeignArray
+import Data.Massiv.Array.SIMD.Internal
 import Data.Massiv.Array.Unsafe
 import Data.Massiv.Core.List
 import Data.Massiv.Core.Operations
-import Data.Massiv.Array.SIMD.Internal
---import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
-import qualified Data.Massiv.Array.SIMD.Double.M256d as SIMD
+import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
+--import qualified Data.Massiv.Array.SIMD.Double.M256d as SIMD
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -114,14 +116,6 @@ instance Index ix => Mutable V ix Double where
   initialize (MArrayDouble arr) =
     unsafePrimToPrim $ SIMD.broadcastDouble arr 0 (sizeForeignArray arr) 0
   {-# INLINE initialize #-}
-  -- initializeNew mDef sz =
-  --   case mDef of
-  --     Nothing -> unsafePrimToPrim (MArrayDouble <$> callocForeignArray sz)
-  --     Just defVal -> do
-  --       marr <- unsafeNew sz
-  --       unsafeLinearSet marr 0 (totalElem sz) defVal
-  --       pure marr
-  -- {-# INLINE initializeNew #-}
   unsafeLinearRead (MArrayDouble arr) = unsafePrimToPrim . readForeignArray arr
   {-# INLINE unsafeLinearRead #-}
   unsafeLinearWrite (MArrayDouble arr) i = unsafePrimToPrim . writeForeignArray arr i
@@ -152,10 +146,6 @@ eqDouble (VArray _ arr1) (VArray _ arr2) =
   unsafePerformIO $ SIMD.eqDouble arr1 arr2
 {-# INLINE eqDouble #-}
 
-plusDouble :: Index ix => Array V ix Double -> Array V ix Double -> Array V ix Double
-plusDouble (VArray c1 arr1) (VArray c2 arr2) =
-  VArray (c1 <> c2) $ unsafePerformIO $ SIMD.plusDouble arr1 arr2
-{-# INLINE plusDouble #-}
 
 multiplySIMD
   :: Source r Ix2 Double =>
@@ -203,6 +193,34 @@ maximumDouble (VArray _ arr) = unsafePerformIO $ SIMD.maximumDouble arr
 -- {-# INLINE broadcastDouble #-}
 
 
+splitApply2 ::
+     (Mutable V ix e1, Storable e1, Storable e2, Storable e3)
+  => (ForeignArray Ix1 e3 -> ForeignArray Ix1 e2 -> ForeignArray Ix1 e1 -> IO ())
+  -> Array V ix e3
+  -> Array V ix e2
+  -> Array V ix e1
+splitApply2 f (VArray comp1 arr1) (VArray comp2 arr2) =
+  unsafePerformIO $ do
+    let !sz = foreignArraySize arr1
+        !comp = comp1 <> comp2
+        !totalLength = totalElem sz
+    marr <- unsafeNew sz
+    VArray _ resArr <- unsafeFreeze Seq marr
+    withScheduler_ comp $ \scheduler -> do
+      let schedule chunkStart chunkLength =
+            let chunk1 = extractForeignArray chunkStart chunkLength arr1
+                chunk2 = extractForeignArray chunkStart chunkLength arr2
+                resChunk = extractForeignArray chunkStart chunkLength resArr
+             in scheduleWork_ scheduler $ f chunk1 chunk2 resChunk
+          {-# INLINE schedule #-}
+      splitLinearly (numWorkers scheduler) totalLength $ \chunkLength slackStart -> do
+        loopM_ 0 (< slackStart) (+ chunkLength) (`schedule` SafeSz chunkLength)
+        when (slackStart < totalLength) $ schedule slackStart (SafeSz (totalLength - slackStart))
+    unsafeFreeze comp marr
+{-# INLINE splitApply2 #-}
+
+
+
 instance Numeric V Double where
   sumArray _ = sumDouble
   {-# INLINE sumArray #-}
@@ -216,7 +234,7 @@ instance Numeric V Double where
   -- {-# INLINE multiplyElementArray #-}
   -- absPointwise = liftDArray abs
   -- {-# INLINE absPointwise #-}
-  additionPointwise = plusDouble
+  additionPointwise = splitApply2 SIMD.plusDouble
   {-# INLINE additionPointwise #-}
 
 

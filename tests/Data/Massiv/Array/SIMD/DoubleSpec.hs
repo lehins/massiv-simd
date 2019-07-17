@@ -79,6 +79,11 @@ spec = do
     it "not eq" $
       property $ \(arr1 :: Array D Ix1 Double) (arr2 :: Array D Ix1 Double) ->
         arr1 /= arr2 ==> not (eqDouble (computeAs V arr1) (computeAs V arr2))
+    it "plus" $
+      property $ \(arr1 :: Array D Ix1 Double) arr2 ->
+        A.and $ A.zipWith (epsilonEq epsilon)
+                          (computeAs V (arr1 + arr2))
+                          (computeAs V arr1 + computeAs V arr2)
 
 
 epsilonEq :: (Num a, Ord a) =>

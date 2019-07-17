@@ -161,12 +161,12 @@ reallocForeignArray (ForeignArray sz freed curPtr fptr@(ForeignPtr _ c)) newsz
               pure (ForeignArray newsz freed curPtr fptr)
             | otherwise = do
               let !(I# oldByteSize#) = oldLength * elementSize
-              fptr'@(ForeignPtr ptr# _) <- alloc newByteSize (alignment (undefined :: e))
+              fptr' <- alloc newByteSize (alignment (undefined :: e))
               -- We can't grow pinned memory in ghc, so we are left with manual create new
               -- and copy appraoch.
-              withForeignPtr fptr' $ \(Ptr addr#) ->
+              withForeignPtr fptr' $ \ptr'@(Ptr addr#) -> do
                 primitive_ (copyMutableByteArrayToAddr# mba# offsetBytes# addr# oldByteSize#)
-              pure (ForeignArray newsz nullPtr (Ptr ptr#) fptr')
+                pure (ForeignArray newsz nullPtr ptr' fptr')
             where
               !newByteSize = newLength * elementSize
        in case c of
@@ -317,7 +317,7 @@ extractForeignArray ::
      Storable e
   => Ix1 -- ^ Offset
   -> Sz ix -- ^ New size
-  -> ForeignArray ix e
+  -> ForeignArray ix' e
   -> ForeignArray ix e
 extractForeignArray i newsz (ForeignArray _ freed curPtr fptr) =
   ForeignArray newsz freed (advancePtr curPtr i) fptr
@@ -426,15 +426,14 @@ zipWithForeignArray ::
   => (Ptr b -> Ptr b -> Ptr b -> CLong -> IO ())
   -> ForeignArray ix a
   -> ForeignArray ix a
-  -> IO (ForeignArray ix a)
-zipWithForeignArray zipWithAction arr1 arr2 = do
-  let sz = SafeSz $ liftIndex2 min (unSz (foreignArraySize arr1)) (unSz (foreignArraySize arr2))
-  resArr <- mallocForeignArray sz
+  -> ForeignArray ix a
+  -> IO ()
+zipWithForeignArray zipWithAction arr1 arr2 resArr =
   withForeignArray arr1 $ \p1 ->
     withForeignArray arr2 $ \p2 ->
       withForeignArray resArr $ \pRes ->
-        zipWithAction (coerce p1) (coerce p2) (coerce pRes) (fromIntegral (totalElem sz))
-  pure resArr
+        let sz = fromIntegral (unSz (sizeForeignArray resArr))
+         in zipWithAction (coerce p1) (coerce p2) (coerce pRes) sz
 {-# INLINE zipWithForeignArray #-}
 
 

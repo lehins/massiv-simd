@@ -35,10 +35,7 @@ eqDouble = eqWithForeignArray c_eq__m128d
 
 
 plusDouble ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO (ForeignArray ix Double)
+     Index ix => ForeignArray ix Double -> ForeignArray ix Double -> ForeignArray ix Double -> IO ()
 plusDouble = zipWithForeignArray c_plus__m128d
 {-# INLINE plusDouble #-}
 
@@ -73,6 +70,7 @@ foreign import ccall unsafe "m128d.c massiv_copy__m128d"
 
 foreign import ccall unsafe "m128d.c massiv_dot__m128d"
   c_dot__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
+
 
 foreign import ccall unsafe "m128d.c massiv_eq__m128d"
   c_eq__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CBool

@@ -35,10 +35,7 @@ eqDouble = eqWithForeignArray c_eq__m128d
 
 
 plusDouble ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO (ForeignArray ix Double)
+     Index ix => ForeignArray ix Double -> ForeignArray ix Double -> ForeignArray ix Double -> IO ()
 plusDouble = zipWithForeignArray c_plus__m128d
 {-# INLINE plusDouble #-}
 

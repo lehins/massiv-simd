@@ -27,6 +27,7 @@ library
                      , deepseq
                      , massiv >= 0.3.6
                      , primitive
+                     , scheduler >= 1.4.0
                      , unliftio-core
                      , vector
 
