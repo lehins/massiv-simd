@@ -25,9 +25,17 @@ import Data.Coerce
 doubleAlignment :: Int
 doubleAlignment = 32
 
-dotDouble :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
-dotDouble = coerce . fold2WithForeignArray c_dot__m256d
+-- dotDouble' :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
+-- dotDouble' = coerce . fold2WithForeignArray c_dot__m256d
+-- {-# INLINE dotDouble' #-}
+
+dotDouble :: Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Double
+dotDouble = fold2WithAlignedForeignArray c_dot__m256d_a (\acc x y -> acc + x * y) 0 32
 {-# INLINE dotDouble #-}
+-- dotDouble :: Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Double
+-- dotDouble = fold2WithForeignArray' (c_dot__m256d (CDouble 0))
+-- {-# INLINE dotDouble #-}
+
 
 eqDouble :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
 eqDouble = eqWithForeignArray c_eq__m128d
@@ -69,7 +77,10 @@ foreign import ccall unsafe "m128d.c massiv_copy__m128d"
 
 
 foreign import ccall unsafe "m256d.c massiv_dot__m256d"
-  c_dot__m256d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
+  c_dot__m256d :: CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
+
+foreign import ccall unsafe "m256d.c massiv_dot__m256d_a"
+  c_dot__m256d_a :: CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 foreign import ccall unsafe "m128d.c massiv_eq__m128d"
   c_eq__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CBool

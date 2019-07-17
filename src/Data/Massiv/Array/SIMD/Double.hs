@@ -26,8 +26,8 @@ import Data.Massiv.Array.SIMD.Internal
 import Data.Massiv.Array.Unsafe
 import Data.Massiv.Core.List
 import Data.Massiv.Core.Operations
-import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
---import qualified Data.Massiv.Array.SIMD.Double.M256d as SIMD
+--import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
+import qualified Data.Massiv.Array.SIMD.Double.M256d as SIMD
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -138,7 +138,9 @@ instance Index ix => Mutable V ix Double where
   {-# INLINE unsafeLinearGrow #-}
 
 dotDouble :: Index ix => Array V ix Double -> Array V ix Double -> Double
-dotDouble (VArray _ arr1) (VArray _ arr2) = unsafePerformIO $ SIMD.dotDouble arr1 arr2
+dotDouble (VArray _ arr1) (VArray _ arr2) =
+  unsafePerformIO $
+  SIMD.dotDouble (sizeForeignArray arr1 `min` sizeForeignArray arr2) arr1 arr2
 {-# INLINE dotDouble #-}
 
 eqDouble :: Index ix => Array V ix Double -> Array V ix Double -> Bool

@@ -38,6 +38,8 @@ module Data.Massiv.Array.ForeignArray
   , eqWithForeignArray
   , foldWithForeignArray
   , fold2WithForeignArray
+  , fold2WithForeignArray'
+  , fold2WithAlignedForeignArray
   -- ** Combining
   , zipWithForeignArray
   ) where
@@ -401,6 +403,18 @@ fold2WithForeignArray foldAction arr1 arr2 =
            (unSz (sizeForeignArray arr1) `min` unSz (sizeForeignArray arr2)))
 {-# INLINE fold2WithForeignArray #-}
 
+fold2WithForeignArray' ::
+     (Coercible a b, Coercible e c, Index ix)
+  => (Ptr b -> Ptr b -> CLong -> IO e)
+  -> Sz1
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO c
+fold2WithForeignArray' foldAction sz arr1 arr2 =
+  coerce $ withForeignArray arr1 $ \p1 ->
+    withForeignArray arr2 $ \p2 -> foldAction (coerce p1) (coerce p2) (fromIntegral (unSz sz))
+{-# INLINE fold2WithForeignArray' #-}
+
 
 eqWithForeignArray ::
      (Coercible a b, Index ix)
@@ -441,3 +455,43 @@ zipWithForeignArray zipWithAction arr1 arr2 resArr =
 cboolToBool :: CBool -> Bool
 cboolToBool = (/= 0)
 {-# INLINE cboolToBool #-}
+
+
+
+fold2WithAlignedForeignArray ::
+     forall a b c e ix. (Storable a, Coercible a b, Coercible e c, Index ix)
+  => (e -> Ptr b -> Ptr b -> CLong -> IO e)
+  -- ^ Folding SIMD action. Ensure that the first pointer is always aligned according to
+  -- the supplied alignment
+  -- -> (a -> a -> c)
+  -> (c -> a -> a -> c)
+  -> c
+  -> Int
+  -> Sz1
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO c
+fold2WithAlignedForeignArray foldActionSIMD foldWith initAcc align sz arr1 arr2 =
+  withForeignArray arr1 $ \p1 ->
+    withForeignArray arr2 $ \p2 -> do
+      let !p1Aligned = alignPtr p1 align
+          !esize = sizeOf (undefined :: a)
+          !lengthTotal = unSz sz
+          !lengthBefore = min lengthTotal ((p1Aligned `minusPtr` p1) `div` esize)
+       -- !lengthAligned = ((((lengthTotal - lengthBefore) * esize) `div` align) * align) `div` esize
+          !perAlignment = align `div` esize
+          !lengthAligned = ((lengthTotal - lengthBefore) `div` perAlignment) * perAlignment
+          !p1Adjusted = coerce (p1 `advancePtr` lengthBefore)
+          !p2Adjusted = coerce (p2 `advancePtr` lengthBefore)
+          foldOverEdge from to iAcc =
+            loopM from (< to) (+ 1) iAcc $ \i acc -> do
+              e1 <- peek (p1 `advancePtr` i)
+              e2 <- peek (p2 `advancePtr` i)
+              pure $ foldWith acc e1 e2
+          {-# INLINE foldOverEdge #-}
+      resBefore <- foldOverEdge 0 lengthBefore initAcc
+      resAcc <-
+        coerce $
+        foldActionSIMD (coerce resBefore) p1Adjusted p2Adjusted (fromIntegral lengthAligned)
+      foldOverEdge (lengthBefore + lengthAligned) lengthTotal resAcc
+{-# INLINE fold2WithAlignedForeignArray #-}

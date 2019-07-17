@@ -29,7 +29,7 @@ spec = do
   unsafeMutableUnboxedSpec @V @Ix3 @Double
   unsafeMutableUnboxedSpec @V @Ix4 @Double
   unsafeMutableUnboxedSpec @V @Ix5 @Double
-  let epsilon = 0.000000000001
+  let epsilon = 1e-11
   describe "Dot Product" $ do
     it "any" $
       property $ \x (y :: Array V Ix1 Double) ->
