@@ -22,76 +22,77 @@ import Foreign.Ptr (Ptr)
 import Data.Coerce
 
 
-doubleAlignment :: Int
-doubleAlignment = 32
-
--- dotDouble' :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
--- dotDouble' = coerce . fold2WithForeignArray c_dot__m256d
--- {-# INLINE dotDouble' #-}
-
-dotDouble :: Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Double
-dotDouble = fold2WithAlignedForeignArray c_dot__m256d_a (\acc x y -> acc + x * y) 0 32
-{-# INLINE dotDouble #-}
--- dotDouble :: Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Double
--- dotDouble = fold2WithForeignArray' (c_dot__m256d (CDouble 0))
--- {-# INLINE dotDouble #-}
+perAlignment :: Int
+perAlignment = 4
 
 
-eqDouble :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
-eqDouble = eqWithForeignArray c_eq__m128d
-{-# INLINE eqDouble #-}
+dotProductForeignArray ::
+     Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Double
+dotProductForeignArray =
+  fold2WithAlignedForeignArray c_dot_product__m256d_a (\acc x y -> acc + x * y) 0 perAlignment
+{-# INLINE dotProductForeignArray #-}
 
 
-plusDouble ::
+eqForeignArray :: Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
+eqForeignArray = eqWithForeignArray c_eq__m128d
+{-# INLINE eqForeignArray #-}
+
+
+-- additionForeignArray ::
+--      Index ix => ForeignArray ix Double -> ForeignArray ix Double -> ForeignArray ix Double -> IO ()
+-- additionForeignArray = zipWithForeignArray c_addition__m128d
+-- {-# INLINE additionForeignArray #-}
+
+additionForeignArray ::
      Index ix => ForeignArray ix Double -> ForeignArray ix Double -> ForeignArray ix Double -> IO ()
-plusDouble = zipWithForeignArray c_plus__m128d
-{-# INLINE plusDouble #-}
+additionForeignArray = zipWithAlignedForeignArray c_addition__m256d_a (+) perAlignment
+{-# INLINE additionForeignArray #-}
 
 
-sumDouble :: Index ix => ForeignArray ix Double -> IO Double
-sumDouble = coerce . foldWithForeignArray c_sum__m128d
-{-# INLINE sumDouble #-}
+sumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
+sumForeignArray = foldWithAlignedForeignArray c_sum__m256d_a (+) 0 perAlignment
+{-# INLINE sumForeignArray #-}
 
-productDouble :: Index ix => ForeignArray ix Double -> IO Double
-productDouble = coerce . foldWithForeignArray c_product__m128d
-{-# INLINE productDouble #-}
+productForeignArray :: Index ix => ForeignArray ix Double -> IO Double
+productForeignArray = coerce . foldWithForeignArray c_product__m128d
+{-# INLINE productForeignArray #-}
 
-maximumDouble :: Index ix => ForeignArray ix Double -> IO Double
-maximumDouble = coerce . foldWithForeignArray c_maximum__m128d
-{-# INLINE maximumDouble #-}
+maximumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
+maximumForeignArray = coerce . foldWithForeignArray c_maximum__m128d
+{-# INLINE maximumForeignArray #-}
 
-copyDouble :: ForeignArray ix1 Double -> Ix1 -> ForeignArray ix2 Double -> Ix1 -> Sz1 -> IO ()
-copyDouble = copyWithForeignArray c_copy__m128d
-{-# INLINE copyDouble #-}
+copyForeignArray :: ForeignArray ix1 Double -> Ix1 -> ForeignArray ix2 Double -> Ix1 -> Sz1 -> IO ()
+copyForeignArray = copyWithForeignArray c_copy__m128d
+{-# INLINE copyForeignArray #-}
 
-broadcastDouble :: ForeignArray ix Double -> Ix1 -> Sz1 -> Double -> IO ()
-broadcastDouble = setWithForeignArray c_broadcast__m128d
-{-# INLINE broadcastDouble #-}
+setForeignArray :: ForeignArray ix Double -> Ix1 -> Sz1 -> Double -> IO ()
+setForeignArray = setWithForeignArray c_set__m128d
+{-# INLINE setForeignArray #-}
 
 
-foreign import ccall unsafe "m128d.c massiv_broadcast__m128d"
-  c_broadcast__m128d :: Ptr CDouble -> CLong -> CDouble -> IO ()
+foreign import ccall unsafe "m128d.c massiv_set__m128d"
+  c_set__m128d :: Ptr CDouble -> CLong -> CDouble -> IO ()
 
 foreign import ccall unsafe "m128d.c massiv_copy__m128d"
   c_copy__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
 
-foreign import ccall unsafe "m256d.c massiv_dot__m256d"
-  c_dot__m256d :: CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
+foreign import ccall unsafe "m256d.c massiv_dot_product__m256d_a"
+  c_dot_product__m256d_a :: CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall unsafe "m256d.c massiv_dot__m256d_a"
-  c_dot__m256d_a :: CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 foreign import ccall unsafe "m128d.c massiv_eq__m128d"
   c_eq__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CBool
 
+foreign import ccall unsafe "m256d.c massiv_addition__m256d_a"
+  c_addition__m256d_a :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
-foreign import ccall unsafe "m128d.c massiv_plus__m128d"
-  c_plus__m128d :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
+foreign import ccall unsafe "m128d.c massiv_addition__m128d"
+  c_addition__m128d :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
 
-foreign import ccall safe "m128d.c massiv_sum__m128d"
-  c_sum__m128d :: Ptr CDouble -> CLong -> IO CDouble
+foreign import ccall safe "m128d.c massiv_sum__m256d_a"
+  c_sum__m256d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 
 foreign import ccall safe "m128d.c massiv_product__m128d"

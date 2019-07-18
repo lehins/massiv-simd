@@ -14,7 +14,7 @@
 --
 module Data.Massiv.Array.ForeignArray
   ( ForeignArray(..)
-  , sizeForeignArray
+  , lengthForeignArray
   -- * Memory allocation
   , newForeignArray
   , mallocForeignArray
@@ -38,12 +38,14 @@ module Data.Massiv.Array.ForeignArray
   , eqWithForeignArray
   , foldWithForeignArray
   , fold2WithForeignArray
-  , fold2WithForeignArray'
+  , zipWithAlignedForeignArray
+  , foldWithAlignedForeignArray
   , fold2WithAlignedForeignArray
   -- ** Combining
   , zipWithForeignArray
   ) where
 
+import Control.Monad
 import Control.Monad.Primitive
 import Control.DeepSeq
 import Data.Coerce
@@ -292,7 +294,7 @@ readForeignArray (ForeignArray sz _ curPtr fptr) =
 -- @since 0.1.0
 writeForeignArray :: (Index ix, Storable e) => ForeignArray ix e -> Ix1 -> e -> IO ()
 writeForeignArray =
-  INDEX_CHECK("ForeignArray.writeForeignArray", sizeForeignArray, \ arr i e -> withForeignArray arr $ \ptr -> poke (advancePtr ptr i) e)
+  INDEX_CHECK("ForeignArray.writeForeignArray", lengthForeignArray, \ arr i e -> withForeignArray arr $ \ptr -> poke (advancePtr ptr i) e)
 {-# INLINE writeForeignArray #-}
 
 -- | Take an outer slice of an array, thus lowering the dimensionality. Does no bounds
@@ -338,9 +340,9 @@ withForeignArray (ForeignArray _ _ curPtr fptr) f =
 -- | Get the total number of elements in the array
 --
 -- @since 0.1.0
-sizeForeignArray :: Index ix => ForeignArray ix e -> Sz1
-sizeForeignArray (ForeignArray sz _ _ _) = SafeSz (totalElem sz)
-{-# INLINE sizeForeignArray #-}
+lengthForeignArray :: Index ix => ForeignArray ix e -> Sz1
+lengthForeignArray (ForeignArray sz _ _ _) = SafeSz (totalElem sz)
+{-# INLINE lengthForeignArray #-}
 
 
 setWithForeignArray ::
@@ -383,55 +385,52 @@ foldWithForeignArray ::
   -> IO e
 foldWithForeignArray foldAction arr =
   withForeignArray arr $ \ptr ->
-    foldAction (coerce ptr) (fromIntegral (unSz (sizeForeignArray arr)))
+    foldAction (coerce ptr) (fromIntegral (unSz (lengthForeignArray arr)))
 {-# INLINE foldWithForeignArray #-}
 
 
-fold2WithForeignArray ::
-     (Coercible a b, Index ix)
-  => (Ptr b -> Ptr b -> CLong -> IO e)
-  -> ForeignArray ix a
-  -> ForeignArray ix a
-  -> IO e
-fold2WithForeignArray foldAction arr1 arr2 =
-  withForeignArray arr1 $ \p1 ->
-    withForeignArray arr2 $ \p2 ->
-      foldAction
-        (coerce p1)
-        (coerce p2)
-        (fromIntegral
-           (unSz (sizeForeignArray arr1) `min` unSz (sizeForeignArray arr2)))
-{-# INLINE fold2WithForeignArray #-}
+-- fold2WithForeignArray ::
+--      (Coercible a b, Index ix)
+--   => (Ptr b -> Ptr b -> CLong -> IO e)
+--   -> ForeignArray ix a
+--   -> ForeignArray ix a
+--   -> IO e
+-- fold2WithForeignArray foldAction arr1 arr2 =
+--   withForeignArray arr1 $ \p1 ->
+--     withForeignArray arr2 $ \p2 ->
+--       foldAction
+--         (coerce p1)
+--         (coerce p2)
+--         (fromIntegral
+--            (unSz (lengthForeignArray arr1) `min` unSz (lengthForeignArray arr2)))
+-- {-# INLINE fold2WithForeignArray #-}
 
-fold2WithForeignArray' ::
+fold2WithForeignArray ::
      (Coercible a b, Coercible e c, Index ix)
   => (Ptr b -> Ptr b -> CLong -> IO e)
   -> Sz1
   -> ForeignArray ix a
   -> ForeignArray ix a
   -> IO c
-fold2WithForeignArray' foldAction sz arr1 arr2 =
+fold2WithForeignArray foldAction sz arr1 arr2 =
   coerce $ withForeignArray arr1 $ \p1 ->
     withForeignArray arr2 $ \p2 -> foldAction (coerce p1) (coerce p2) (fromIntegral (unSz sz))
-{-# INLINE fold2WithForeignArray' #-}
+{-# INLINE fold2WithForeignArray #-}
 
 
 eqWithForeignArray ::
      (Coercible a b, Index ix)
   => (Ptr b -> Ptr b -> CLong -> IO CBool)
+  -> Sz1
   -> ForeignArray ix a
   -> ForeignArray ix a
   -> IO Bool
-eqWithForeignArray eqAction arr1 arr2
-  | foreignArraySize arr1 /= foreignArraySize arr2 = pure False
-  | otherwise =
-    fold2WithForeignArray
-      (\p1 p2 _ ->
-         if p1 == p2
-           then pure True
-           else cboolToBool <$> eqAction p1 p2 (fromIntegral (unSz (sizeForeignArray arr1))))
-      arr1
-      arr2
+eqWithForeignArray eqAction sz arr1 arr2 = fold2WithForeignArray eqWithPtrs sz arr1 arr2
+  where
+    eqWithPtrs p1 p2 _
+      | p1 == p2 = pure True
+      | otherwise = cboolToBool <$> eqAction p1 p2 (fromIntegral (unSz (lengthForeignArray arr1)))
+    {-# INLINE eqWithPtrs #-}
 {-# INLINE eqWithForeignArray #-}
 
 
@@ -446,7 +445,7 @@ zipWithForeignArray zipWithAction arr1 arr2 resArr =
   withForeignArray arr1 $ \p1 ->
     withForeignArray arr2 $ \p2 ->
       withForeignArray resArr $ \pRes ->
-        let sz = fromIntegral (unSz (sizeForeignArray resArr))
+        let sz = fromIntegral (unSz (lengthForeignArray resArr))
          in zipWithAction (coerce p1) (coerce p2) (coerce pRes) sz
 {-# INLINE zipWithForeignArray #-}
 
@@ -458,40 +457,112 @@ cboolToBool = (/= 0)
 
 
 
+-- Arguments to the supplied action:
+--
+--                          .- ptr (ForeignArray start)
+--  beginning of           /    .- ptrAlignedAdjusted
+--   ForeignPtr \         |    /                     .-- ForeignArray end
+--               v        v   v                     /
+--               x.x.x.x.[x.x|x.x.x.x|x.x.x.x|x.x.x].x.x.x.x.x <- end of allocated memory
+--                       |\ / \___________   \      \____________
+--                       | v              \___\                  \
+--                       | `lengthBefore:2     `lengthAligned:8   \
+--                       \_________________________________________\
+--                                                                  `lengthTotal:13
+withAlignedForeignArray ::
+     forall a c ix. (Storable a)
+  => ForeignArray ix a
+  -> Int -- ^ Alignment. In number of elements, rather than bytes.
+  -> Sz1
+  -> (Ptr a -> Int -> Ptr a -> Int -> IO c)
+  -> IO c
+withAlignedForeignArray arr perAlignment (Sz lengthTotal) action =
+  withForeignArray arr $ \ptr -> do
+    let !esize = sizeOf (undefined :: a)
+        !ptrAligned = alignPtr ptr (perAlignment * esize)
+        !lengthBefore = min lengthTotal ((ptrAligned `minusPtr` ptr) `div` esize)
+        !lengthAligned = ((lengthTotal - lengthBefore) `div` perAlignment) * perAlignment
+        !ptrAlignedAdjusted = ptr `advancePtr` lengthBefore
+    action ptr lengthBefore ptrAlignedAdjusted lengthAligned
+{-# INLINE withAlignedForeignArray #-}
+
+zipWithAlignedForeignArray ::
+     (Storable a, Index ix, Coercible a b, Show a, Num a, Eq a)
+  => (Ptr b -> Ptr b -> Ptr b -> CLong -> IO ())
+  -> (a -> a -> a)
+  -> Int -- ^ Alignment. In number of elements, rather than bytes.
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO ()
+zipWithAlignedForeignArray zipWithSIMD f perAlignment arr1 arr2 resArr = do
+  let sz = lengthForeignArray resArr
+      lengthTotal = unSz sz
+  withAlignedForeignArray arr1 perAlignment sz $ \ptr1 lengthBefore ptr1Aligned lengthAligned ->
+    withForeignArray arr2 $ \ptr2 ->
+      withForeignArray resArr $ \ptrRes -> do
+        let zipWithOverEdge from to =
+              loopM_ from (< to) (+ 1) $ \i -> do
+                e1 <- peek (ptr1 `advancePtr` i)
+                e2 <- peek (ptr2 `advancePtr` i)
+                poke (ptrRes `advancePtr` i) $! f e1 e2
+            {-# INLINE zipWithOverEdge #-}
+            ptr1Adjusted = coerce ptr1Aligned
+            ptr2Adjusted = coerce (ptr2 `advancePtr` lengthBefore)
+            ptrResAdjusted = coerce (ptrRes `advancePtr` lengthBefore)
+        zipWithOverEdge 0 lengthBefore
+        zipWithSIMD ptr1Adjusted ptr2Adjusted ptrResAdjusted (fromIntegral lengthAligned)
+        zipWithOverEdge (lengthBefore + lengthAligned) lengthTotal
+{-# INLINE zipWithAlignedForeignArray #-}
+
+
+foldWithAlignedForeignArray ::
+     forall a b c e ix. (Storable a, Coercible a b, Coercible e c, Index ix)
+  => (e -> Ptr b -> CLong -> IO e)
+  -> (c -> a -> c)
+  -> c
+  -> Int -- ^ Alignment. In number of elements, rather than bytes.
+  -> ForeignArray ix a
+  -> IO c
+foldWithAlignedForeignArray foldActionSIMD foldWith initAcc perAlignment arr = do
+  let sz = lengthForeignArray arr
+  withAlignedForeignArray arr perAlignment sz $ \ptr lengthBefore ptrAligned lengthAligned -> do
+    let !lengthTotal = unSz sz
+        foldOverEdge from to iAcc =
+          loopM from (< to) (+ 1) iAcc $ \ !i !acc -> foldWith acc <$> peek (ptr `advancePtr` i)
+        {-# INLINE foldOverEdge #-}
+    preRes <- foldOverEdge 0 lengthBefore initAcc
+    resAcc <-
+      coerce $ foldActionSIMD (coerce preRes) (coerce ptrAligned) (fromIntegral lengthAligned)
+    foldOverEdge (lengthBefore + lengthAligned) lengthTotal resAcc
+{-# INLINE foldWithAlignedForeignArray #-}
+
+
 fold2WithAlignedForeignArray ::
      forall a b c e ix. (Storable a, Coercible a b, Coercible e c, Index ix)
   => (e -> Ptr b -> Ptr b -> CLong -> IO e)
   -- ^ Folding SIMD action. Ensure that the first pointer is always aligned according to
   -- the supplied alignment
-  -- -> (a -> a -> c)
   -> (c -> a -> a -> c)
   -> c
-  -> Int
+  -> Int -- ^ Alignment. In number of elements, rather than bytes.
   -> Sz1
   -> ForeignArray ix a
   -> ForeignArray ix a
   -> IO c
-fold2WithAlignedForeignArray foldActionSIMD foldWith initAcc align sz arr1 arr2 =
-  withForeignArray arr1 $ \p1 ->
-    withForeignArray arr2 $ \p2 -> do
-      let !p1Aligned = alignPtr p1 align
-          !esize = sizeOf (undefined :: a)
-          !lengthTotal = unSz sz
-          !lengthBefore = min lengthTotal ((p1Aligned `minusPtr` p1) `div` esize)
-       -- !lengthAligned = ((((lengthTotal - lengthBefore) * esize) `div` align) * align) `div` esize
-          !perAlignment = align `div` esize
-          !lengthAligned = ((lengthTotal - lengthBefore) `div` perAlignment) * perAlignment
-          !p1Adjusted = coerce (p1 `advancePtr` lengthBefore)
-          !p2Adjusted = coerce (p2 `advancePtr` lengthBefore)
+fold2WithAlignedForeignArray foldActionSIMD foldWith initAcc perAlignment sz arr1 arr2 =
+  withAlignedForeignArray arr1 perAlignment sz $ \ptr1 lengthBefore ptr1Aligned lengthAligned ->
+    withForeignArray arr2 $ \ptr2 -> do
+      let lengthTotal = unSz sz
+          ptr1Adjusted = coerce ptr1Aligned
+          ptr2Adjusted = coerce (ptr2 `advancePtr` lengthBefore)
           foldOverEdge from to iAcc =
-            loopM from (< to) (+ 1) iAcc $ \i acc -> do
-              e1 <- peek (p1 `advancePtr` i)
-              e2 <- peek (p2 `advancePtr` i)
-              pure $ foldWith acc e1 e2
+            loopM from (< to) (+ 1) iAcc $ \ !i !acc ->
+              foldWith acc <$> peek (ptr1 `advancePtr` i) <*> peek (ptr2 `advancePtr` i)
           {-# INLINE foldOverEdge #-}
       resBefore <- foldOverEdge 0 lengthBefore initAcc
       resAcc <-
         coerce $
-        foldActionSIMD (coerce resBefore) p1Adjusted p2Adjusted (fromIntegral lengthAligned)
+        foldActionSIMD (coerce resBefore) ptr1Adjusted ptr2Adjusted (fromIntegral lengthAligned)
       foldOverEdge (lengthBefore + lengthAligned) lengthTotal resAcc
 {-# INLINE fold2WithAlignedForeignArray #-}

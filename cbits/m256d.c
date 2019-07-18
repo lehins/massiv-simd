@@ -19,7 +19,7 @@
 /**
  * Compute the dot product of two vectors of doubles.
  */
-double massiv_dot__m256d(const double init, const double vec1[], const double vec2[], const long len) {
+double massiv_dot_product__m256d(const double init, const double vec1[], const double vec2[], const long len) {
   __m128d hi;
   __m128d lo;
   __m256d acc;
@@ -45,7 +45,7 @@ double massiv_dot__m256d(const double init, const double vec1[], const double ve
  * Compute the dot product of two vectors of doubles. First vector `v1` is expected to be
  * aligned on 32 byte boundary
  */
-double massiv_dot__m256d_a(const double acc, const double *v1, const double *v2, const long len) {
+double massiv_dot_product__m256d_a(const double acc, const double *v1, const double *v2, const long len) {
   __m128d hi;
   __m128d lo;
   __m256d acc256d = _mm256_set_pd(acc, 0, 0, 0);
@@ -59,4 +59,29 @@ double massiv_dot__m256d_a(const double acc, const double *v1, const double *v2,
   return _mm_cvtsd_f64(lo) + massiv__mm_cvtsd_f64u(lo);
 }
 
+double massiv_sum__m256d_a(const double acc, const double *v1, const double *v2, const long len) {
+  __m128d hi;
+  __m128d lo;
+  __m256d acc256d = _mm256_set_pd(acc, 0, 0, 0);
+  for (long i = 0; i < len; i += 4) {
+    __m256d vi1 = _mm256_load_pd(&v1[i]);
+    __m256d vi2 = _mm256_loadu_pd(&v2[i]);
+    acc256d = _mm256_add_pd(acc256d, _mm256_add_pd(vi1, vi2));
+  }
+  hi = _mm256_extractf128_pd(acc256d, 1);
+  lo = _mm_add_pd(hi, _mm256_extractf128_pd(acc256d, 0));
+  return _mm_cvtsd_f64(lo) + massiv__mm_cvtsd_f64u(lo);
+}
 
+
+/**
+ * Add two vectors of doubles element by element and store results in the resulting
+ * vector.
+ */
+void massiv_addition__m256d_a(const double *v1, const double *v2, double *res, const long len) {
+  for (int i = 0; i < len; i += 2) {
+    __m128d vi1 = _mm_loadu_pd(v1 + i);
+    __m128d vi2 = _mm_loadu_pd(v2 + i);
+    _mm_storeu_pd(res + i, _mm_add_pd(vi1, vi2));
+  }
+}

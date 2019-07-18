@@ -8,51 +8,24 @@ inline double min_double(double num1, double num2){
   return (num1 > num2 ) ? num2 : num1;
 }
 
-// Copy the upper double-precision (64-bit) floating-point element of a to dst.
-/* double massiv__mm_cvtsd_f64u(const __m128d val){ */
-/*   return _mm_cvtsd_f64(_mm_castsi128_pd(_mm_srli_si128(_mm_castpd_si128(val), 8))); */
-/* } */
-
 
 /**
  * Compute the dot product of two vectors with doubles.
  */
-double massiv_dot__m128d(const double vec1[], const double vec2[], const long len) {
-  __m128d acc;
-  long i = len % 2;
-  if (i == 0)
-    acc = _mm_setzero_pd();
-  else
-    acc = _mm_set_sd(vec1[0] * vec2[0]);
-
-  for (; i < len; i += 2) {
-    __m128d vi1 = _mm_loadu_pd(&vec1[i]);
-    __m128d vi2 = _mm_loadu_pd(&vec2[i]);
+double massiv_dot_product__m128d_a(const double init, const double *v1, const double *v2, const long len) {
+  __m128d acc = _mm_set_sd(init);
+  for (int i = 0; i < len; i += 2) {
+    __m128d vi1 = _mm_load_pd(v1 + i);
+    __m128d vi2 = _mm_loadu_pd(v2 + i);
     acc = _mm_add_pd(acc, _mm_mul_pd(vi1, vi2));
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
 }
 
-/* double massiv_dot__m128d_aligned(const double vec1[], const double vec2[], const long len) { */
-/*   __m128d acc128d = _mm_setzero_pd(); */
-/*   double acc; */
-/*   long rest = len % 2; */
-
-/*   for (int i = 0; i < len - rest; i += 2) { */
-/*     __m128d vi1 = _mm_load_pd(vec1 + i); */
-/*     __m128d vi2 = _mm_load_pd(vec2 + i); */
-/*     acc128d = _mm_add_pd(acc128d, _mm_mul_pd(vi1, vi2)); */
-/*   } */
-/*   acc = _mm_cvtsd_f64(acc128d) + massiv__mm_cvtsd_f64u(acc128d); */
-/*   if (rest != 0) */
-/*     acc = acc + vec1[len-1] * vec2[len-1]; */
-/*   return acc; */
-/* } */
-
 /**
  * Set all elements of the vector to the same value
  */
-void massiv_broadcast__m128d(double vec[], const long len, const double val) {
+void massiv_set__m128d(double vec[], const long len, const double val) {
   long i = len % 2;
   if (i == 1)
     vec[0] = val;
@@ -99,7 +72,7 @@ bool massiv_eq__m128d(const double vec1[], const double vec2[], const long len) 
  * Add two vectors of doubles element by element and store results in the resulting
  * vector.
  */
-void massiv_plus__m128d(const double vec1[], const double vec2[], double res[], const long len) {
+void massiv_addition__m128d(const double vec1[], const double vec2[], double res[], const long len) {
   long i = len % 2;
   if (i == 1)
     res[0] = vec1[0] + vec2[0];
@@ -111,19 +84,14 @@ void massiv_plus__m128d(const double vec1[], const double vec2[], double res[], 
   }
 }
 
+
 /**
  * Compute the sum over a vector of doubles.
  */
-double massiv_sum__m128d(const double vec[], const long len) {
-  __m128d acc;
-  long i = len % 2;
-  if (i == 0)
-    acc = _mm_setzero_pd();
-  else
-    acc = _mm_set_sd(vec[0]);
-
-  for (; i < len; i += 2) {
-    __m128d vi = _mm_loadu_pd(&vec[i]);
+double massiv_sum__m128d_a(const double init, const double *v, const long len) {
+  __m128d acc = _mm_set_sd(init);
+  for (int i = 0; i < len; i += 2) {
+    __m128d vi = _mm_loadu_pd(&v[i]);
     acc = _mm_add_pd(acc, vi);
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
@@ -208,3 +176,39 @@ double massiv_maximum__m128d(const double vec[], const long len) {
 
 
 
+/**
+ * Compute the dot product of two vectors with doubles.
+ */
+double massiv_dot_product_m128d(const double vec1[], const double vec2[], const long len) {
+  __m128d acc;
+  long i = len % 2;
+  if (i == 0)
+    acc = _mm_setzero_pd();
+  else
+    acc = _mm_set_sd(vec1[0] * vec2[0]);
+
+  for (; i < len; i += 2) {
+    __m128d vi1 = _mm_loadu_pd(&vec1[i]);
+    __m128d vi2 = _mm_loadu_pd(&vec2[i]);
+    acc = _mm_add_pd(acc, _mm_mul_pd(vi1, vi2));
+  }
+  return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
+}
+
+/**
+ * Compute the sum over a vector of doubles.
+ */
+double massiv_sum__m128d(const double vec[], const long len) {
+  __m128d acc;
+  long i = len % 2;
+  if (i == 0)
+    acc = _mm_setzero_pd();
+  else
+    acc = _mm_set_sd(vec[0]);
+
+  for (; i < len; i += 2) {
+    __m128d vi = _mm_loadu_pd(&vec[i]);
+    acc = _mm_add_pd(acc, vi);
+  }
+  return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
+}

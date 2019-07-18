@@ -41,7 +41,8 @@ instance NFData ix => NFData (Array V ix e) where
   {-# INLINE rnf #-}
 
 instance Index ix => Eq (Array V ix Double) where
-  (==) = eqDouble
+  (==) a1 a2 = size a1 == size a2 && A.and (A.zipWith (==) a1 a2)
+    --eqDouble
   {-# INLINE (==) #-}
 
 -- instance (VS.Storable e, Ord e, Index ix) => Ord (Array S ix e) where
@@ -79,11 +80,15 @@ instance Index ix => Load V ix Double where
 
 instance (Storable e, Load V ix e) => Source V ix e where
   unsafeLinearIndex (VArray _ arr) = unsafeInlineIO . readForeignArray arr
+    -- unsafePerformIO . readForeignArray arr
   {-# INLINE unsafeLinearIndex #-}
+  unsafeLinearSlice ix sz (VArray comp arr) = VArray comp $ extractForeignArray ix sz arr
+  {-# INLINE unsafeLinearSlice #-}
 
 
 instance (Storable e, Load V ix e) => Manifest V ix e where
   unsafeLinearIndexM (VArray _ arr) = unsafeInlineIO . readForeignArray arr
+    -- unsafePerformIO . readForeignArray arr
   {-# INLINE unsafeLinearIndexM #-}
 
 
@@ -111,20 +116,20 @@ instance Index ix => Mutable V ix Double where
   {-# INLINE unsafeThaw #-}
   unsafeFreeze comp (MArrayDouble arr) = pure $ VArray comp arr
   {-# INLINE unsafeFreeze #-}
-  unsafeNew sz = unsafePrimToPrim (MArrayDouble <$> newForeignArray sz)
+  unsafeNew sz = unsafePrimToPrim (MArrayDouble <$> mallocForeignArray sz)
   {-# INLINE unsafeNew #-}
   initialize (MArrayDouble arr) =
-    unsafePrimToPrim $ SIMD.broadcastDouble arr 0 (sizeForeignArray arr) 0
+    unsafePrimToPrim $ SIMD.setForeignArray arr 0 (lengthForeignArray arr) 0
   {-# INLINE initialize #-}
   unsafeLinearRead (MArrayDouble arr) = unsafePrimToPrim . readForeignArray arr
   {-# INLINE unsafeLinearRead #-}
   unsafeLinearWrite (MArrayDouble arr) i = unsafePrimToPrim . writeForeignArray arr i
   {-# INLINE unsafeLinearWrite #-}
   unsafeLinearSet (MArrayDouble arr) offset len =
-    unsafePrimToPrim . SIMD.broadcastDouble arr offset (Sz len)
+    unsafePrimToPrim . SIMD.setForeignArray arr offset (Sz len)
   {-# INLINE unsafeLinearSet #-}
   unsafeLinearCopy (MArrayDouble arrs) iFrom (MArrayDouble arrd) iTo =
-    unsafePrimToPrim . SIMD.copyDouble arrs iFrom arrd iTo
+    unsafePrimToPrim . SIMD.copyForeignArray arrs iFrom arrd iTo
   {-# INLINE unsafeLinearCopy #-}
   unsafeArrayLinearCopy arrFrom iFrom marrTo iTo sz = do
     marrFrom <- unsafeThaw arrFrom
@@ -137,15 +142,10 @@ instance Index ix => Mutable V ix Double where
     fmap MArrayDouble . unsafePrimToPrim . reallocForeignArray arr
   {-# INLINE unsafeLinearGrow #-}
 
-dotDouble :: Index ix => Array V ix Double -> Array V ix Double -> Double
-dotDouble (VArray _ arr1) (VArray _ arr2) =
-  unsafePerformIO $
-  SIMD.dotDouble (sizeForeignArray arr1 `min` sizeForeignArray arr2) arr1 arr2
-{-# INLINE dotDouble #-}
-
 eqDouble :: Index ix => Array V ix Double -> Array V ix Double -> Bool
 eqDouble (VArray _ arr1) (VArray _ arr2) =
-  unsafePerformIO $ SIMD.eqDouble arr1 arr2
+  foreignArraySize arr1 == foreignArraySize arr2 &&
+  unsafePerformIO (SIMD.eqForeignArray (lengthForeignArray arr1) arr1 arr2)
 {-# INLINE eqDouble #-}
 
 
@@ -164,35 +164,11 @@ multiplyTransposedSIMD arr1 arr2
   | n1 /= m2 = throw $ SizeMismatchException (size arr1) (size arr2)
   | otherwise =
     makeArrayR D (getComp arr1 <> getComp arr2) (SafeSz (m1 :. n2)) $ \(i :. j) ->
-      dotDouble (unsafeOuterSlice arr1 i) (unsafeOuterSlice arr2 j)
+      unsafeDotProduct (unsafeOuterSlice arr1 i) (unsafeOuterSlice arr2 j)
   where
     SafeSz (m1 :. n1) = size arr1
     SafeSz (n2 :. m2) = size arr2
 {-# INLINE multiplyTransposedSIMD #-}
-
-sumDouble :: Index ix => Array V ix Double -> Double
-sumDouble (VArray _ arr) = unsafePerformIO $ SIMD.sumDouble arr
-{-# INLINE sumDouble #-}
-
-productDouble :: Index ix => Array V ix Double -> Double
-productDouble (VArray _ arr) = unsafePerformIO $ SIMD.productDouble arr
-{-# INLINE productDouble #-}
-
-maximumDouble :: Index ix => Array V ix Double -> Double
-maximumDouble (VArray _ arr) = unsafePerformIO $ SIMD.maximumDouble arr
-{-# INLINE maximumDouble #-}
-
-
-
--- copyDouble :: MArray V ix1 Double -> Ix1 -> Array V ix2 Double -> Ix1 -> Sz1 -> IO ()
--- copyDouble (MVArray arrs) iFrom (VArray _ arrd) iTo k =
---   unsafePerformIO $ SIMD.copyDouble arrs iFrom arrd iTo k
--- {-# INLINE copyDouble #-}
-
--- broadcastDouble :: MArray V ix Double -> Ix1 -> Sz1 -> Double -> IO ()
--- broadcastDouble (VArray _ arr) offset k e =
---     unsafePerformIO $ SIMD.broadcastDouble arr offset k e
--- {-# INLINE broadcastDouble #-}
 
 
 splitApply2 ::
@@ -203,7 +179,8 @@ splitApply2 ::
   -> Array V ix e1
 splitApply2 f (VArray comp1 arr1) (VArray comp2 arr2) =
   unsafePerformIO $ do
-    let !sz = foreignArraySize arr1
+    let !sz = SafeSz (liftIndex2 min (unSz (foreignArraySize arr1)) (unSz (foreignArraySize arr2)))
+          -- min (foreignArraySize arr1) (foreignArraySize arr2)
         !comp = comp1 <> comp2
         !totalLength = totalElem sz
     marr <- unsafeNew sz
@@ -222,25 +199,47 @@ splitApply2 f (VArray comp1 arr1) (VArray comp2 arr2) =
 {-# INLINE splitApply2 #-}
 
 
+dotProductM :: (Load V Ix1 e, Numeric V e, MonadThrow m) => Array V Ix1 e -> Array V Ix1 e -> m e
+dotProductM arr1 arr2
+  | size arr1 == size arr2 = pure $ unsafeDotProduct arr1 arr2
+  | otherwise = throwM $ SizeMismatchException (size arr1) (size arr2)
+{-# INLINE dotProductM #-}
+
+dotProduct :: (Source r Ix1 e, Numeric r e) => Array r Ix1 e -> Array r Ix1 e -> e
+dotProduct arr1 arr2 =
+  unsafeDotProduct (unsafeLinearSlice 0 sz arr1) (unsafeLinearSlice 0 sz arr2)
+  where sz = min (size arr1) (size arr2)
+{-# INLINE dotProduct #-}
+
 
 instance Numeric V Double where
-  sumArray _ = sumDouble
+  sumArray (VArray _ arr) = unsafeInlineIO $ SIMD.sumForeignArray arr
   {-# INLINE sumArray #-}
-  productArray _ = productDouble
+  productArray (VArray _ arr) = unsafeInlineIO $ SIMD.productForeignArray arr
   {-# INLINE productArray #-}
-  dotProduct _ = dotDouble
-  {-# INLINE dotProduct #-}
+  unsafeDotProduct (VArray _ arr1) (VArray _ arr2) =
+    unsafeInlineIO $ SIMD.dotProductForeignArray (lengthForeignArray arr1) arr1 arr2
+  {-# INLINE unsafeDotProduct #-}
   -- minusElementArray arr e = liftDArray (subtract e) arr
   -- {-# INLINE minusElementArray #-}
   -- multiplyElementArray arr e = liftDArray (* e) arr
   -- {-# INLINE multiplyElementArray #-}
   -- absPointwise = liftDArray abs
   -- {-# INLINE absPointwise #-}
-  additionPointwise = splitApply2 SIMD.plusDouble
+  additionPointwise = splitApply2 SIMD.additionForeignArray
   {-# INLINE additionPointwise #-}
 
+plusDouble :: Index ix => Array V ix Double -> Array V ix Double -> Array V ix Double
+plusDouble (VArray c1 arr1) (VArray c2 arr2) =
+  unsafePerformIO $ do
+    let !sz = SafeSz $ liftIndex2 min (unSz (foreignArraySize arr1)) (unSz (foreignArraySize arr2))
+    resArr <- newForeignArray sz
+    SIMD.additionForeignArray arr1 arr2 resArr
+    pure $ VArray (c1 <> c2) resArr
+{-# INLINE plusDouble #-}
 
 instance (Numeric V e, Mutable V ix e, Storable e) => Num (Array V ix e) where
+--instance (Mutable V ix Double) => Num (Array V ix Double) where
   (+) = additionPointwise
   {-# INLINE (+) #-}
   (-) = subtractionPointwise
