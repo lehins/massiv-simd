@@ -54,20 +54,22 @@ spec = do
        in delay res1 == delay res2
   describe "Matrix Multiplication" $ do
     it "V vs P" $
-      property $ \(ArrIx mat _) ->
+      property $ \(ArrNE mat) -> do
+        pure () :: IO ()
         let matP = computeAs P mat
-            res1 = multiplyTransposed mat (mat :: Array V Ix2 Double)
-            res2 = multiplyTransposed matP matP
-         in A.and $ A.zipWith (epsilonEq epsilon) res1 res2
+        res1 <- multiplyTransposed mat (mat :: Array V Ix2 Double)
+        res2 <- multiplyTransposed matP matP
+        A.and (A.zipWith (epsilonEq epsilon) res1 res2) `shouldBe` True
     it "transposed" $
-      property $ \(ArrIx mat _) ->
-        let res1 = multiplyTransposed mat (mat :: Array V Ix2 Double)
-            res2 = multiplyTransposedSIMD mat $ computeAs V mat
-         in A.and $ A.zipWith (epsilonEq epsilon) res1 res2
+      property $ \(ArrNE mat) -> do
+        pure () :: IO ()
+        res1 <- multiplyTransposed mat (mat :: Array V Ix2 Double)
+        let res2 = multiplyTransposedSIMD mat mat
+        A.and (A.zipWith (epsilonEq epsilon) res1 res2) `shouldBe` True
   describe "Folding" $ do
-    -- it "sum" $
-    --   property $ \(arr :: Array D Ix1 Double) ->
-    --     epsilonEq epsilon (A.sum arr) (sumArray (computeAs V arr))
+    it "sum" $
+      property $ \(arr :: Array D Ix1 Double) ->
+        epsilonEq epsilon (A.sum arr) (sumArray (computeAs V arr))
     -- it "product" $
     --   property $ \(arr :: Array D Ix1 Double) ->
     --     epsilonEq epsilon (A.product arr) (productArray (computeAs V arr))
@@ -80,6 +82,7 @@ spec = do
     -- it "not eq" $
     --   property $ \(arr1 :: Array D Ix1 Double) (arr2 :: Array D Ix1 Double) ->
     --     arr1 /= arr2 ==> not (eqDouble (computeAs V arr1) (computeAs V arr2))
+  describe "Zipping" $ do
     it "plus" $
       property $ \(arr1 :: Array D Ix1 Double) (arr2 :: Array D Ix1 Double) ->
         A.and $ A.zipWith (epsilonEq epsilon)

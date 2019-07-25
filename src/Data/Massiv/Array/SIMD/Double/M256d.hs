@@ -91,7 +91,7 @@ foreign import ccall unsafe "m128d.c massiv_addition__m128d"
   c_addition__m128d :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
 
-foreign import ccall safe "m128d.c massiv_sum__m256d_a"
+foreign import ccall safe "m256d.c massiv_sum__m256d_a"
   c_sum__m256d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 

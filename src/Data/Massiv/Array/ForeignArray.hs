@@ -286,7 +286,9 @@ allocAlignedForeignArray allocBytes sz align = do
 -- @since 0.1.0
 readForeignArray :: (Index ix, Storable e) => ForeignArray ix e -> Ix1 -> IO e
 readForeignArray (ForeignArray sz _ curPtr fptr) =
-  INDEX_CHECK("ForeignArray.readForeignArray", Sz . totalElem, \ _ i -> withForeignPtr fptr $ \_ -> peek (advancePtr curPtr i)) sz
+  INDEX_CHECK("ForeignArray.readForeignArray",
+              Sz . totalElem,
+              \ _ i -> withForeignPtr fptr $ \_ -> peek (advancePtr curPtr i)) sz
 {-# INLINE readForeignArray #-}
 
 -- | Write an element to an array at a linear index. No bounds checking is performed.
@@ -294,7 +296,9 @@ readForeignArray (ForeignArray sz _ curPtr fptr) =
 -- @since 0.1.0
 writeForeignArray :: (Index ix, Storable e) => ForeignArray ix e -> Ix1 -> e -> IO ()
 writeForeignArray =
-  INDEX_CHECK("ForeignArray.writeForeignArray", lengthForeignArray, \ arr i e -> withForeignArray arr $ \ptr -> poke (advancePtr ptr i) e)
+  INDEX_CHECK("ForeignArray.writeForeignArray",
+              lengthForeignArray,
+              \ arr i e -> withForeignArray arr $ \ptr -> poke (advancePtr ptr i) e)
 {-# INLINE writeForeignArray #-}
 
 -- | Take an outer slice of an array, thus lowering the dimensionality. Does no bounds
