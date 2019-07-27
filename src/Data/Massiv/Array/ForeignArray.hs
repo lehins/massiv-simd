@@ -38,14 +38,15 @@ module Data.Massiv.Array.ForeignArray
   , eqWithForeignArray
   , foldWithForeignArray
   , fold2WithForeignArray
-  , zipWithAlignedForeignArray
   , foldWithAlignedForeignArray
   , fold2WithAlignedForeignArray
-  -- ** Combining
+  -- ** Lifting
+  , liftForeignArray
   , zipWithForeignArray
+  , liftAlignedForeignArray
+  , zipWithAlignedForeignArray
   ) where
 
-import Control.Monad
 import Control.Monad.Primitive
 import Control.DeepSeq
 import Data.Coerce
@@ -453,6 +454,19 @@ zipWithForeignArray zipWithAction arr1 arr2 resArr =
          in zipWithAction (coerce p1) (coerce p2) (coerce pRes) sz
 {-# INLINE zipWithForeignArray #-}
 
+liftForeignArray ::
+     (Storable a, Index ix)
+  => (Ptr b -> Ptr b -> CLong -> IO ())
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO ()
+liftForeignArray liftAction arr resArr =
+  withForeignArray arr $ \p ->
+    withForeignArray resArr $ \pRes ->
+      let sz = fromIntegral (unSz (lengthForeignArray resArr))
+       in liftAction (coerce p) (coerce pRes) sz
+{-# INLINE liftForeignArray #-}
+
 
 
 cboolToBool :: CBool -> Bool
@@ -489,6 +503,32 @@ withAlignedForeignArray arr perAlignment (Sz lengthTotal) action =
         !ptrAlignedAdjusted = ptr `advancePtr` lengthBefore
     action ptr lengthBefore ptrAlignedAdjusted lengthAligned
 {-# INLINE withAlignedForeignArray #-}
+
+liftAlignedForeignArray ::
+     (Storable a, Index ix, Coercible a b, Show a, Num a, Eq a)
+  => (Ptr b -> Ptr b -> CLong -> IO ())
+  -> (a -> a)
+  -> Int -- ^ Alignment. In number of elements, rather than bytes.
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO ()
+liftAlignedForeignArray liftSIMD f perAlignment arr resArr = do
+  let sz = lengthForeignArray resArr
+      lengthTotal = unSz sz
+  withAlignedForeignArray arr perAlignment sz $ \ptr lengthBefore ptrAligned lengthAligned ->
+    withForeignArray resArr $ \ptrRes -> do
+      let liftOverEdge from to =
+            loopM_ from (< to) (+ 1) $ \i -> do
+              e <- peek (ptr `advancePtr` i)
+              poke (ptrRes `advancePtr` i) $! f e
+          {-# INLINE liftOverEdge #-}
+          ptrAdjusted = coerce ptrAligned
+          ptrResAdjusted = coerce (ptrRes `advancePtr` lengthBefore)
+      liftOverEdge 0 lengthBefore
+      liftSIMD ptrAdjusted ptrResAdjusted (fromIntegral lengthAligned)
+      liftOverEdge (lengthBefore + lengthAligned) lengthTotal
+{-# INLINE liftAlignedForeignArray #-}
+
 
 zipWithAlignedForeignArray ::
      (Storable a, Index ix, Coercible a b, Show a, Num a, Eq a)

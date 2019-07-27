@@ -1,3 +1,6 @@
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -64,7 +67,7 @@ spec = do
       property $ \(ArrNE mat) -> do
         pure () :: IO ()
         res1 <- multiplyTransposed mat (mat :: Array V Ix2 Double)
-        let res2 = multiplyTransposedSIMD mat mat
+        let res2 = multiplyTransposed' mat mat
         A.and (A.zipWith (epsilonEq epsilon) res1 res2) `shouldBe` True
   describe "Folding" $ do
     it "sum" $
@@ -82,12 +85,42 @@ spec = do
     -- it "not eq" $
     --   property $ \(arr1 :: Array D Ix1 Double) (arr2 :: Array D Ix1 Double) ->
     --     arr1 /= arr2 ==> not (eqDouble (computeAs V arr1) (computeAs V arr2))
+  describe "Mapping" $ do
+    it "Plus" $
+      property $ \(arr :: Array V Ix1 Double) x ->
+        A.and $ A.zipWith (epsilonEq epsilon) (delay arr .+ x) (arr .+ x)
+    it "Minus" $
+      property $ \(arr :: Array V Ix1 Double) x ->
+        A.and $ A.zipWith (epsilonEq epsilon) (delay arr .- x) (arr .- x)
+    it "Multiply" $
+      property $ \(arr :: Array V Ix1 Double) x ->
+        A.and $ A.zipWith (epsilonEq epsilon) (delay arr .* x) (arr .* x)
+    it "Abs" $
+      property $ \(arr :: Array V Ix1 Double) ->
+        A.and $ A.zipWith (==) (abs (delay arr)) (abs arr)
   describe "Zipping" $ do
-    it "plus" $
-      property $ \(arr1 :: Array D Ix1 Double) (arr2 :: Array D Ix1 Double) ->
-        A.and $ A.zipWith (epsilonEq epsilon)
-                          (arr1 + arr2)
-                          (computeAs V arr1 + computeAs V arr2)
+    it "addition" $
+      property $ \(ArrSameSz arr1 arr2 :: ArrSameSz V Ix1 Double) ->
+        A.and $ A.zipWith (epsilonEq epsilon) (delay arr1 + delay arr2) (arr1 + arr2)
+    it "subtraction" $
+      property $ \(ArrSameSz arr1 arr2 :: ArrSameSz V Ix1 Double) ->
+        A.and $ A.zipWith (epsilonEq epsilon) (delay arr1 - delay arr2) (arr1 - arr2)
+    it "multiplication" $
+      property $ \(ArrSameSz arr1 arr2 :: ArrSameSz V Ix1 Double) ->
+        A.and $ A.zipWith (epsilonEq epsilon) (delay arr1 * delay arr2) (arr1 * arr2)
+
+
+data ArrSameSz r ix e = ArrSameSz !(Array r ix e) !(Array r ix e)
+
+deriving instance Show (Array r ix e) => Show (ArrSameSz r ix e)
+
+instance (Mutable r ix e, Arbitrary (Array D ix e)) => Arbitrary (ArrSameSz r ix e) where
+  arbitrary = do
+    a1 :: Array D ix e <- arbitrary
+    a2 :: Array D ix e <- arbitrary
+    let sz = liftSz2 min (size a1) (size a2)
+    pure $ ArrSameSz (compute (extract' zeroIndex sz a1)) (compute (extract' zeroIndex sz a2))
+
 
 
 epsilonEq :: (Num a, Ord a) =>

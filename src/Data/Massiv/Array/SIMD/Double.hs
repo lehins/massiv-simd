@@ -149,37 +149,64 @@ eqDouble (VArray _ arr1) (VArray _ arr2) =
 {-# INLINE eqDouble #-}
 
 
-multiplySIMD
+multiply'
   :: Source r Ix2 Double =>
      Array V Ix2 Double -> Array r Ix2 Double -> Array D Ix2 Double
-multiplySIMD arr1 arr2 = multiplyTransposedSIMD arr1 arr2'
+multiply' arr1 arr2 = multiplyTransposed' arr1 arr2'
   where
     arr2' = compute $ transpose arr2
-{-# INLINE multiplySIMD #-}
+{-# INLINE multiply' #-}
 
 
-multiplyTransposedSIMD ::
-     Array V Ix2 Double -> Array V Ix2 Double -> Array D Ix2 Double
-multiplyTransposedSIMD arr1 arr2
+multiplyTransposed' ::
+     (Source r Ix2 a, Numeric r a) => Array r Ix2 a -> Array r Ix2 a -> Array D Ix2 a
+multiplyTransposed' arr1 arr2
   | n1 /= m2 = throw $ SizeMismatchException (size arr1) (size arr2)
   | otherwise =
-    makeArrayR D (getComp arr1 <> getComp arr2) (SafeSz (m1 :. n2)) $ \(i :. j) ->
-      multiplySumArray (unsafeOuterSlice arr1 i) (unsafeOuterSlice arr2 j)
+    makeArrayR D (getComp arr1 <> getComp arr2) (SafeSz (m1 :. n2)) $ \(i :. j)
+      --multiplySumArray (unsafeOuterSlice arr1 i) (unsafeOuterSlice arr2 j)
+     ->
+      multiplySumArray
+        (unsafeLinearSlice (i * n1) (SafeSz n1) arr1)
+        (unsafeLinearSlice (j * n1) (SafeSz n1) arr2)
   where
     SafeSz (m1 :. n1) = size arr1
     SafeSz (n2 :. m2) = size arr2
-{-# INLINE multiplyTransposedSIMD #-}
+{-# INLINE multiplyTransposed' #-}
+
+splitApply ::
+     (Mutable V ix e1, Storable e1, Storable e2)
+  => (ForeignArray Ix1 e2 -> ForeignArray Ix1 e1 -> IO ())
+  -> Array V ix e2
+  -> Array V ix e1
+splitApply f (VArray comp arr) =
+  unsafePerformIO $ do
+    let !sz = foreignArraySize arr
+        !totalLength = totalElem sz
+    marr <- unsafeNew sz
+    VArray _ resArr <- unsafeFreeze Seq marr
+    withScheduler_ comp $ \scheduler -> do
+      let schedule chunkStart chunkLength =
+            let chunk = extractForeignArray chunkStart chunkLength arr
+                resChunk = extractForeignArray chunkStart chunkLength resArr
+             in scheduleWork_ scheduler $ f chunk resChunk
+          {-# INLINE schedule #-}
+      splitLinearly (numWorkers scheduler) totalLength $ \chunkLength slackStart -> do
+        loopM_ 0 (< slackStart) (+ chunkLength) (`schedule` SafeSz chunkLength)
+        when (slackStart < totalLength) $ schedule slackStart (SafeSz (totalLength - slackStart))
+    unsafeFreeze comp marr
+{-# INLINE splitApply #-}
 
 
-splitApply2 ::
+unsafeSplitApply2 ::
      (Mutable V ix e1, Storable e1, Storable e2, Storable e3)
   => (ForeignArray Ix1 e3 -> ForeignArray Ix1 e2 -> ForeignArray Ix1 e1 -> IO ())
   -> Array V ix e3
   -> Array V ix e2
   -> Array V ix e1
-splitApply2 f (VArray comp1 arr1) (VArray comp2 arr2) =
+unsafeSplitApply2 f (VArray comp1 arr1) (VArray comp2 arr2) =
   unsafePerformIO $ do
-    let !sz = SafeSz (liftIndex2 min (unSz (foreignArraySize arr1)) (unSz (foreignArraySize arr2)))
+    let !sz = foreignArraySize arr1
           -- min (foreignArraySize arr1) (foreignArraySize arr2)
         !comp = comp1 <> comp2
         !totalLength = totalElem sz
@@ -196,7 +223,14 @@ splitApply2 f (VArray comp1 arr1) (VArray comp2 arr2) =
         loopM_ 0 (< slackStart) (+ chunkLength) (`schedule` SafeSz chunkLength)
         when (slackStart < totalLength) $ schedule slackStart (SafeSz (totalLength - slackStart))
     unsafeFreeze comp marr
-{-# INLINE splitApply2 #-}
+{-# INLINE unsafeSplitApply2 #-}
+
+applySameSizeArray2 ::
+     Load r ix e => (Array r ix e -> Array r ix e -> a) -> Array r ix e -> Array r ix e -> a
+applySameSizeArray2 f a1 a2
+  | size a1 == size a2 = f a1 a2
+  | otherwise = throw $ SizeMismatchException (size a1) (size a2)
+{-# INLINE applySameSizeArray2 #-}
 
 
 dotProductM :: (Load V Ix1 e, Numeric V e, MonadThrow m) => Array V Ix1 e -> Array V Ix1 e -> m e
@@ -218,16 +252,22 @@ instance Numeric V Double where
   productArray (VArray _ arr) = unsafeInlineIO $ SIMD.productForeignArray arr
   {-# INLINE productArray #-}
   multiplySumArray (VArray _ arr1) (VArray _ arr2) =
-    unsafeInlineIO $ SIMD.dotProductForeignArray (lengthForeignArray arr1) arr1 arr2
+    unsafeInlineIO $ SIMD.multiplySumForeignArray (lengthForeignArray arr1) arr1 arr2
   {-# INLINE multiplySumArray #-}
-  -- minusElementArray arr e = liftDArray (subtract e) arr
-  -- {-# INLINE minusElementArray #-}
-  -- multiplyElementArray arr e = liftDArray (* e) arr
-  -- {-# INLINE multiplyElementArray #-}
-  -- absPointwise = liftDArray abs
-  -- {-# INLINE absPointwise #-}
-  additionPointwise = splitApply2 SIMD.additionForeignArray
+  plusScalar arr x = splitApply (`SIMD.plusScalarForeignArray` x) arr
+  {-# INLINE plusScalar #-}
+  minusScalar arr x = splitApply (`SIMD.minusScalarForeignArray` x) arr
+  {-# INLINE minusScalar #-}
+  multiplyScalar arr x = splitApply (`SIMD.multiplyScalarForeignArray` x) arr
+  {-# INLINE multiplyScalar #-}
+  absPointwise = splitApply SIMD.absPointwiseForeignArray
+  {-# INLINE absPointwise #-}
+  additionPointwise = unsafeSplitApply2 SIMD.additionForeignArray
   {-# INLINE additionPointwise #-}
+  subtractionPointwise = unsafeSplitApply2 SIMD.subtractionForeignArray
+  {-# INLINE subtractionPointwise #-}
+  multiplicationPointwise = unsafeSplitApply2 SIMD.multiplicationForeignArray
+  {-# INLINE multiplicationPointwise #-}
   unsafeLiftArray f a = makeArrayLinear (vComp a) (size a) (f . unsafeLinearIndex a)
   {-# INLINE unsafeLiftArray #-}
   unsafeLiftArray2 f a1 a2 =
@@ -245,12 +285,11 @@ plusDouble (VArray c1 arr1) (VArray c2 arr2) =
 {-# INLINE plusDouble #-}
 
 instance (Numeric V e, Mutable V ix e, Storable e) => Num (Array V ix e) where
---instance (Mutable V ix Double) => Num (Array V ix Double) where
-  (+) = additionPointwise
+  (+) = applySameSizeArray2 additionPointwise
   {-# INLINE (+) #-}
-  (-) = subtractionPointwise
+  (-) = applySameSizeArray2 subtractionPointwise
   {-# INLINE (-) #-}
-  (*) = multiplicationPointwise
+  (*) = applySameSizeArray2 multiplicationPointwise
   {-# INLINE (*) #-}
   abs = absPointwise
   {-# INLINE abs #-}

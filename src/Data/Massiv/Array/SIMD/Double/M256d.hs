@@ -26,11 +26,11 @@ perAlignment :: Int
 perAlignment = 4
 
 
-dotProductForeignArray ::
+multiplySumForeignArray ::
      Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Double
-dotProductForeignArray =
+multiplySumForeignArray =
   fold2WithAlignedForeignArray c_dot_product__m256d_a (\acc x y -> acc + x * y) 0 perAlignment
-{-# INLINE dotProductForeignArray #-}
+{-# INLINE multiplySumForeignArray #-}
 
 
 eqForeignArray :: Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Bool

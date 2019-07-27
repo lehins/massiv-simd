@@ -69,21 +69,76 @@ bool massiv_eq__m128d(const double vec1[], const double vec2[], const long len) 
 }
 
 /**
- * Add two vectors of doubles element by element and store results in the resulting
- * vector.
+ * Add two vectors of doubles pointwise and store results in the supplied vector.
  */
-void massiv_addition__m128d(const double vec1[], const double vec2[], double res[], const long len) {
-  long i = len % 2;
-  if (i == 1)
-    res[0] = vec1[0] + vec2[0];
-
-  for (; i < len; i += 2) {
-    __m128d vi1 = _mm_loadu_pd(&vec1[i]);
-    __m128d vi2 = _mm_loadu_pd(&vec2[i]);
-    _mm_storeu_pd(&res[i], _mm_add_pd(vi1, vi2));
+void massiv_addition__m128d_a(const double vec1[], const double vec2[], double res[], const long len) {
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_add_pd(_mm_load_pd(&vec1[i]), _mm_loadu_pd(&vec2[i])));
   }
 }
 
+/**
+ * Subtract two vectors of doubles pointwise and store results in the supplied vector.
+ */
+void massiv_subtraction__m128d_a(const double vec1[], const double vec2[], double res[], const long len) {
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_sub_pd(_mm_load_pd(&vec1[i]), _mm_loadu_pd(&vec2[i])));
+  }
+}
+
+/**
+ * Multiply two vectors of doubles pointwise and store results in the supplied vector.
+ */
+void massiv_multiplication__m128d_a(const double vec1[], const double vec2[], double res[], const long len) {
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_mul_pd(_mm_load_pd(&vec1[i]), _mm_loadu_pd(&vec2[i])));
+  }
+}
+
+
+/**
+ * Add a scalar to a vector of doubles and store results in the supplied vector.
+ */
+void massiv_plus__m128d_a(const double vec[], const double x, double res[], const long len) {
+  __m128d x128 = _mm_set_pd1(x);
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_add_pd(_mm_load_pd(&vec[i]), x128));
+  }
+}
+
+/**
+ * Subtract a scalar from a vector of doubles and store results in the supplied vector.
+ */
+void massiv_minus__m128d_a(const double vec[], const double x, double res[], const long len) {
+  __m128d x128 = _mm_set_pd1(x);
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_sub_pd(_mm_load_pd(&vec[i]), x128));
+  }
+}
+
+
+/**
+ * Multiply with a scalar each element in a vector of doubles and store results in the
+ * supplied vector.
+ */
+void massiv_multiply__m128d_a(const double vec[], const double x, double res[], const long len) {
+  __m128d x128 = _mm_set_pd1(x);
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_mul_pd(_mm_load_pd(&vec[i]), x128));
+  }
+}
+
+
+/**
+ * Absolute value of each element in a vector of doubles and store results in the
+ * supplied vector.
+ */
+void massiv_abs__m128d_a(const double vec[], double res[], const long len) {
+  const __m128d mask = _mm_castsi128_pd (_mm_set1_epi64x (0x7FFFFFFFFFFFFFFF));
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_and_pd(mask, _mm_load_pd(&vec[i])));
+  }
+}
 
 /**
  * Compute the sum over a vector of doubles.
@@ -211,4 +266,22 @@ double massiv_sum__m128d(const double vec[], const long len) {
     acc = _mm_add_pd(acc, vi);
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
+}
+
+
+
+/**
+ * Add two vectors of doubles element by element and store results in the resulting
+ * vector.
+ */
+void massiv_addition__m128d(const double vec1[], const double vec2[], double res[], const long len) {
+  long i = len % 2;
+  if (i == 1)
+    res[0] = vec1[0] + vec2[0];
+
+  for (; i < len; i += 2) {
+    __m128d vi1 = _mm_loadu_pd(&vec1[i]);
+    __m128d vi2 = _mm_loadu_pd(&vec2[i]);
+    _mm_storeu_pd(&res[i], _mm_add_pd(vi1, vi2));
+  }
 }
