@@ -9,7 +9,7 @@
 -- Portability : non-portable
 --
 module Data.Massiv.Array.SIMD.Internal
-  ( V(..)
+  ( F(..)
   , Array(..)
   , withMVArrayPtr
   , unsafeWithVArrayPtr
@@ -24,10 +24,11 @@ import Foreign.Ptr
 import Prelude hiding (mapM)
 
 
--- | Representation for arrays with SIMD vectorizable elements
-data V = V deriving Show
+-- | Foreign Array Representation suitable for passing to C/C++ over Foreign Function
+-- Interface (FFI). Used for SIMD vectorization with Intel Intrinsics.
+data F = F deriving Show
 
-data instance Array V ix e = VArray
+data instance Array F ix e = VArray
   { vComp  :: !Comp
   , vArray :: !(ForeignArray ix e)
   }
@@ -37,21 +38,21 @@ data instance Array V ix e = VArray
 -- parrent array if that one was a result of a slice.
 --
 -- @since 0.1.0
-unsafeWithVArrayPtr :: Array V ix e -> (Ptr e -> IO a) -> IO a
+unsafeWithVArrayPtr :: Array F ix e -> (Ptr e -> IO a) -> IO a
 unsafeWithVArrayPtr (VArray _ arr) = withForeignArray arr
 {-# INLINE unsafeWithVArrayPtr #-}
 
 -- A bit of unituitive trickery:
---  * `Array V ix e` isn't any different from `MArray s v ix e`, except that it is always
+--  * `Array F ix e` isn't any different from `MArray s v ix e`, except that it is always
 --    polymorphic in the element
---  * Mutable instance for V is always restricted in the element, so SIMD instructions
+--  * Mutable instance for F is always restricted in the element, so SIMD instructions
 --    can be utilized
 -- Because of the above two facts, we do the opposite from what we would normally do: we
 -- freeze the mutable array in order to mutate the pointer.
 -- | Access the pointer to the first element of the mutable array.
 --
 -- @since 0.1.0
-withMVArrayPtr :: Mutable V ix e => MArray RealWorld V ix e -> (Ptr e -> IO a) -> IO a
+withMVArrayPtr :: Mutable F ix e => MArray RealWorld F ix e -> (Ptr e -> IO a) -> IO a
 withMVArrayPtr marr f = unsafeFreeze Seq marr >>= (`unsafeWithVArrayPtr` f)
 {-# INLINE withMVArrayPtr #-}
 

@@ -109,8 +109,33 @@ sumForeignArray = foldWithAlignedForeignArray c_sum__m128d_a (+) 0 perAlignment
 {-# INLINE sumForeignArray #-}
 
 productForeignArray :: Index ix => ForeignArray ix Double -> IO Double
-productForeignArray = coerce . foldWithForeignArray c_product__m128d
+productForeignArray = foldWithAlignedForeignArray c_product__m128d_a (*) 1 perAlignment
 {-# INLINE productForeignArray #-}
+
+powerSumForeignArray :: Index ix => ForeignArray ix Double -> Int -> IO Double
+powerSumForeignArray arr pow =
+  foldWithAlignedForeignArray
+    (c_power_sum__m128d_a (fromIntegral pow))
+    (powerSum pow)
+    0
+    perAlignment
+    arr
+{-# INLINE powerSumForeignArray #-}
+
+powerSum :: (Integral b, Num a) => b -> a -> a -> a
+powerSum pow acc x = acc + x ^ pow
+{-# INLINE powerSum #-}
+
+absPowerSumForeignArray :: Index ix => ForeignArray ix Double -> Int -> IO Double
+absPowerSumForeignArray arr pow =
+  foldWithAlignedForeignArray
+    (c_abs_power_sum__m128d_a (fromIntegral pow))
+    (\acc -> powerSum pow acc . abs)
+    0
+    perAlignment
+    arr
+{-# INLINE absPowerSumForeignArray #-}
+
 
 maximumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
 maximumForeignArray = coerce . foldWithForeignArray c_maximum__m128d
@@ -164,9 +189,14 @@ foreign import ccall unsafe "m128d.c massiv_multiplication__m128d_a"
 foreign import ccall safe "m128d.c massiv_sum__m128d_a"
   c_sum__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
+foreign import ccall safe "m128d.c massiv_product__m128d_a"
+  c_product__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall safe "m128d.c massiv_product__m128d"
-  c_product__m128d :: Ptr CDouble -> CLong -> IO CDouble
+foreign import ccall safe "m128d.c massiv_power_sum__m128d_a"
+  c_power_sum__m128d_a :: CLong -> CDouble -> Ptr CDouble -> CLong -> IO CDouble
+
+foreign import ccall safe "m128d.c massiv_abs_power_sum__m128d_a"
+  c_abs_power_sum__m128d_a :: CLong -> CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 
 foreign import ccall safe "m128d.c massiv_maximum__m128d"

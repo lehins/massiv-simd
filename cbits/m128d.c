@@ -14,7 +14,7 @@ inline double min_double(double num1, double num2){
  */
 double massiv_dot_product__m128d_a(const double init, const double *v1, const double *v2, const long len) {
   __m128d acc = _mm_set_sd(init);
-  for (int i = 0; i < len; i += 2) {
+  for (long i = 0; i < len; i += 2) {
     __m128d vi1 = _mm_load_pd(v1 + i);
     __m128d vi2 = _mm_loadu_pd(v2 + i);
     acc = _mm_add_pd(acc, _mm_mul_pd(vi1, vi2));
@@ -143,32 +143,54 @@ void massiv_abs__m128d_a(const double vec[], double res[], const long len) {
 /**
  * Compute the sum over a vector of doubles.
  */
-double massiv_sum__m128d_a(const double init, const double *v, const long len) {
+double massiv_sum__m128d_a(const double init, const double vec[], const long len) {
   __m128d acc = _mm_set_sd(init);
   for (int i = 0; i < len; i += 2) {
-    __m128d vi = _mm_loadu_pd(&v[i]);
-    acc = _mm_add_pd(acc, vi);
+    acc = _mm_add_pd(acc, _mm_loadu_pd(&vec[i]));
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
 }
 
-
 /**
  * Compute the product over a vector of doubles.
  */
-double massiv_product__m128d(const double vec[], const long len) {
-  __m128d acc;
-  long i = len % 2;
-  if (i == 0)
-    acc = _mm_set1_pd(1);
-  else
-    acc = _mm_set_pd(vec[0], 1);
-
-  for (; i < len; i += 2) {
-    __m128d vi = _mm_loadu_pd(&vec[i]);
-    acc = _mm_mul_pd(acc, vi);
+double massiv_product__m128d_a(const double init, const double vec[], const long len) {
+  __m128d acc = _mm_set_pd(init, 1);
+  for (long i = 0; i < len; i += 2) {
+    acc = _mm_mul_pd(acc, _mm_loadu_pd(&vec[i]));
   }
   return _mm_cvtsd_f64(acc) * massiv__mm_cvtsd_f64u(acc);
+}
+
+/**
+ * Raise each element to the non-negative power and sum all results.
+ */
+double massiv_power_sum__m128d_a(const long pow, const double init, const double vec[], const long len) {
+  __m128d acc = _mm_set_sd(init);
+  for (long i = 0; i < len; i += 2) {
+    __m128d vi = _mm_load_pd(&vec[i]);
+    __m128d viacc = _mm_set_pd1(1);
+    for(long p = 0; p < pow; p++)
+      viacc = _mm_mul_pd(viacc, vi);
+    acc = _mm_add_pd(acc, viacc);
+  }
+  return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
+}
+
+/**
+ * Compute L-n norm, where n is a positive integer.
+ */
+double massiv_abs_power_sum__m128d_a(const long n, const double init, const double vec[], const long len) {
+  __m128d acc = _mm_set_sd(init);
+  const __m128d mask = _mm_castsi128_pd (_mm_set1_epi64x (0x7FFFFFFFFFFFFFFF));
+  for (long i = 0; i < len; i += 2) {
+    __m128d vi = _mm_and_pd(mask, _mm_load_pd(&vec[i]));
+    __m128d viacc = vi;
+    for(long p = 1; p < n; p++)
+      viacc = _mm_mul_pd(viacc, vi);
+    acc = _mm_add_pd(acc, viacc);
+  }
+  return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
 }
 
 

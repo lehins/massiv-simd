@@ -475,7 +475,7 @@ cboolToBool = (/= 0)
 
 
 
--- Arguments to the supplied action:
+-- Arguments to the supplied action, eg. 4 elements per alignment:
 --
 --                          .- ptr (ForeignArray start)
 --  beginning of           /    .- ptrAlignedAdjusted
