@@ -36,18 +36,21 @@ spec = do
   let epsilon = 1e-11
   describe "Dot Product" $ do
     it "any" $
-      property $ \x (y :: Array F Ix1 Double) ->
-        epsilonEq epsilon (dotProduct x y) (A.sum (A.zipWith (*) x y))
+      property $ \(ArrSameSz x y :: ArrSameSz F Ix1 Double) ->
+        epsilonEq epsilon (either throw id (dotProductM x y)) (A.sum (A.zipWith (*) x y))
     it "slice" $
       property $ \(ArrIx mat (i :. _)) ->
         let matP = computeAs P (mat :: Array F Ix2 Double)
             x = mat !> i
             y = matP !> i
-         in epsilonEq epsilon (dotProduct x x) (A.sum (A.zipWith (*) y y))
+         in epsilonEq epsilon (either throw id (dotProductM x x)) (A.sum (A.zipWith (*) y y))
     it "misaligned" $
-      property $ \(ArrNE x :: ArrNE F Ix1 Double) (y :: Array F Ix1 Double) ->
-        let x' = extract' 1 (Sz (unSz (size x) - 1)) x
-        in epsilonEq epsilon (dotProduct x' y) (A.sum (A.zipWith (*) x' y))
+      property $ \(ArrSameSz x' y' :: ArrSameSz F Ix1 Double) ->
+        let sz = unSz (size x')
+            x = extract' 0 (Sz (sz - 1)) x'
+            y = extract' 1 (Sz (sz - 1)) y'
+        in sz /= 0 ==>
+           epsilonEq epsilon (either throw id (dotProductM x y)) (A.sum (A.zipWith (*) x y))
   describe "OuterSlice" $
     it "V vs P" $
     property $ \(ArrIx mat (i :. _)) ->

@@ -1,10 +1,3 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
 -- |
 -- Module      : Data.Massiv.Array.SIMD.Double.M256d
 -- Copyright   : (c) Alexey Kuleshevich 2018-2019
@@ -27,13 +20,13 @@ perAlignment = 4
 
 
 multiplySumForeignArray ::
-     Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Double
+     Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
 multiplySumForeignArray =
   fold2WithAlignedForeignArray c_dot_product__m256d_a (\acc x y -> acc + x * y) 0 perAlignment
 {-# INLINE multiplySumForeignArray #-}
 
 
-eqForeignArray :: Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
+eqForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
 eqForeignArray = eqWithForeignArray c_eq__m128d
 {-# INLINE eqForeignArray #-}
 

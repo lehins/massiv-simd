@@ -12,11 +12,11 @@ inline double min_double(double num1, double num2){
 /**
  * Compute the dot product of two vectors with doubles.
  */
-double massiv_dot_product__m128d_a(const double init, const double *v1, const double *v2, const long len) {
+double massiv_dot_product__m128d_a(const double init, const double v1[], const double v2[], const long len) {
   __m128d acc = _mm_set_sd(init);
   for (long i = 0; i < len; i += 2) {
-    __m128d vi1 = _mm_load_pd(v1 + i);
-    __m128d vi2 = _mm_loadu_pd(v2 + i);
+    __m128d vi1 = _mm_load_pd(&v1[i]);
+    __m128d vi2 = _mm_loadu_pd(&v2[i]);
     acc = _mm_add_pd(acc, _mm_mul_pd(vi1, vi2));
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
@@ -25,26 +25,19 @@ double massiv_dot_product__m128d_a(const double init, const double *v1, const do
 /**
  * Set all elements of the vector to the same value
  */
-void massiv_set__m128d(double vec[], const long len, const double val) {
-  long i = len % 2;
-  if (i == 1)
-    vec[0] = val;
-
-  for (; i < len; i += 2) {
-    _mm_storeu_pd(&vec[i], _mm_set1_pd(val));
+void massiv_fill__m128d_a(const double val, double vec[], const long len) {
+  __m128d val128 = _mm_set1_pd(val);
+  for (long i = 0; i < len; i += 2) {
+    _mm_store_pd(&vec[i], val128);
   }
 }
 
 /**
  * Copy elements from one vector into another
  */
-void massiv_copy__m128d(const double vec[], double res[], const long len) {
-  long i = len % 2;
-  if (i == 1)
-    res[0] = vec[0];
-
-  for (; i < len; i += 2) {
-    __m128d vi = _mm_loadu_pd(&vec[i]);
+void massiv_copy__m128d_a(const double vec[], double res[], const long len) {
+  for (long i = 0; i < len; i += 2) {
+    __m128d vi = _mm_load_pd(&vec[i]);
     _mm_storeu_pd(&res[i], vi);
   }
 }
@@ -53,13 +46,9 @@ void massiv_copy__m128d(const double vec[], double res[], const long len) {
  * Compare two vectors with doubles. Does not short circuit on first inequality (could be
  * useful for cryptography?)
  */
-bool massiv_eq__m128d(const double vec1[], const double vec2[], const long len) {
-  __m128i acc;
-  long i = len % 2;
-  if (len == 1)
-    return vec1[0] == vec2[0];
-  acc = _mm_set1_epi8(0xff);
-  for (; i < len; i += 2) {
+bool massiv_eq__m128d_a(const double vec1[], const double vec2[], const long len) {
+  __m128i acc = _mm_set1_epi8(0xff);
+  for (long i = 0; i < len; i += 2) {
     __m128d vi1 = _mm_loadu_pd(&vec1[i]);
     __m128d vi2 = _mm_loadu_pd(&vec2[i]);
     acc = _mm_and_si128(acc, _mm_castpd_si128(_mm_cmpeq_pd(vi1, vi2)));
@@ -145,7 +134,7 @@ void massiv_abs__m128d_a(const double vec[], double res[], const long len) {
  */
 double massiv_sum__m128d_a(const double init, const double vec[], const long len) {
   __m128d acc = _mm_set_sd(init);
-  for (int i = 0; i < len; i += 2) {
+  for (long i = 0; i < len; i += 2) {
     acc = _mm_add_pd(acc, _mm_loadu_pd(&vec[i]));
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
@@ -256,7 +245,7 @@ double massiv_maximum__m128d(const double vec[], const long len) {
 /**
  * Compute the dot product of two vectors with doubles.
  */
-double massiv_dot_product_m128d(const double vec1[], const double vec2[], const long len) {
+double massiv_dot_product__m128d(const double vec1[], const double vec2[], const long len) {
   __m128d acc;
   long i = len % 2;
   if (i == 0)
@@ -305,5 +294,54 @@ void massiv_addition__m128d(const double vec1[], const double vec2[], double res
     __m128d vi1 = _mm_loadu_pd(&vec1[i]);
     __m128d vi2 = _mm_loadu_pd(&vec2[i]);
     _mm_storeu_pd(&res[i], _mm_add_pd(vi1, vi2));
+  }
+}
+
+
+/**
+ * Compare two vectors with doubles. Does not short circuit on first inequality (could be
+ * useful for cryptography?)
+ */
+bool massiv_eq__m128d(const double vec1[], const double vec2[], const long len) {
+  __m128i acc;
+  long i = len % 2;
+  if (len == 1)
+    return vec1[0] == vec2[0];
+  acc = _mm_set1_epi8(0xff);
+  for (; i < len; i += 2) {
+    __m128d vi1 = _mm_loadu_pd(&vec1[i]);
+    __m128d vi2 = _mm_loadu_pd(&vec2[i]);
+    acc = _mm_and_si128(acc, _mm_castpd_si128(_mm_cmpeq_pd(vi1, vi2)));
+  }
+  return (long long)_mm_movepi64_pi64(acc) == 0xffffffffffffffff &&
+         (long long)_mm_movepi64_pi64(_mm_srli_si128(acc, 8)) == 0xffffffffffffffff;
+}
+
+
+
+/**
+ * Set all elements of the vector to the same value
+ */
+void massiv_set__m128d(double vec[], const long len, const double val) {
+  long i = len % 2;
+  if (i == 1)
+    vec[0] = val;
+
+  for (; i < len; i += 2) {
+    _mm_storeu_pd(&vec[i], _mm_set1_pd(val));
+  }
+}
+
+/**
+ * Copy elements from one vector into another
+ */
+void massiv_copy__m128d(const double vec[], double res[], const long len) {
+  long i = len % 2;
+  if (i == 1)
+    res[0] = vec[0];
+
+  for (; i < len; i += 2) {
+    __m128d vi = _mm_loadu_pd(&vec[i]);
+    _mm_storeu_pd(&res[i], vi);
   }
 }

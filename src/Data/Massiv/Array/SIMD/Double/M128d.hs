@@ -1,10 +1,3 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
 -- |
 -- Module      : Data.Massiv.Array.SIMD.Double.M128d
 -- Copyright   : (c) Alexey Kuleshevich 2018-2019
@@ -25,16 +18,22 @@ import Data.Coerce
 perAlignment :: Int
 perAlignment = 2
 
+
 multiplySumForeignArray ::
-     Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Double
+     Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
 multiplySumForeignArray =
   fold2WithAlignedForeignArray c_dot_product__m128d_a (\acc x y -> acc + x * y) 0 perAlignment
 {-# INLINE multiplySumForeignArray #-}
 
 
-eqForeignArray :: Index ix => Sz1 -> ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
-eqForeignArray = eqWithForeignArray c_eq__m128d
+eqForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
+eqForeignArray = eqWithAlignedForeignArray c_eq__m128d_a perAlignment
 {-# INLINE eqForeignArray #-}
+
+
+-- eqForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
+-- eqForeignArray = eqWithForeignArray c_eq__m128d
+-- {-# INLINE eqForeignArray #-}
 
 plusScalarForeignArray ::
      Index ix
@@ -141,27 +140,28 @@ maximumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
 maximumForeignArray = coerce . foldWithForeignArray c_maximum__m128d
 {-# INLINE maximumForeignArray #-}
 
-copyForeignArray :: ForeignArray ix1 Double -> Ix1 -> ForeignArray ix2 Double -> Ix1 -> Sz1 -> IO ()
-copyForeignArray = copyWithForeignArray c_copy__m128d
+copyForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO ()
+copyForeignArray = copyWithAlignedForeignArray c_copy__m128d_a perAlignment
 {-# INLINE copyForeignArray #-}
 
-setForeignArray :: ForeignArray ix Double -> Ix1 -> Sz1 -> Double -> IO ()
-setForeignArray = setWithForeignArray c_set__m128d
-{-# INLINE setForeignArray #-}
+fillForeignArray :: Index ix => Double -> ForeignArray ix Double -> IO ()
+fillForeignArray = fillWithAlignedForeignArray c_fill__m128d_a perAlignment
+{-# INLINE fillForeignArray #-}
 
 
-foreign import ccall unsafe "m128d.c massiv_set__m128d"
-  c_set__m128d :: Ptr CDouble -> CLong -> CDouble -> IO ()
 
-foreign import ccall unsafe "m128d.c massiv_copy__m128d"
-  c_copy__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
+foreign import ccall unsafe "m128d.c massiv_fill__m128d_a"
+  c_fill__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO ()
+
+foreign import ccall unsafe "m128d.c massiv_copy__m128d_a"
+  c_copy__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
 
 foreign import ccall unsafe "m128d.c massiv_dot_product__m128d_a"
   c_dot_product__m128d_a :: CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall unsafe "m128d.c massiv_eq__m128d"
-  c_eq__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CBool
+foreign import ccall unsafe "m128d.c massiv_eq__m128d_a"
+  c_eq__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO CBool
 
 
 foreign import ccall unsafe "m128d.c massiv_plus__m128d_a"
