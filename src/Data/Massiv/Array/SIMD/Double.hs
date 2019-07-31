@@ -41,8 +41,8 @@ instance NFData ix => NFData (Array F ix e) where
   {-# INLINE rnf #-}
 
 instance Index ix => Eq (Array F ix Double) where
-  (==) a1 a2 = size a1 == size a2 && A.and (A.zipWith (==) a1 a2)
-    --eqDouble
+  -- (==) a1 a2 = size a1 == size a2 && A.and (A.zipWith (==) a1 a2)
+  (==) = eqDouble
   {-# INLINE (==) #-}
 
 -- instance (VS.Storable e, Ord e, Index ix) => Ord (Array S ix e) where
@@ -80,7 +80,6 @@ instance Index ix => Load F ix Double where
 
 instance (Storable e, Load F ix e) => Source F ix e where
   unsafeLinearIndex (VArray _ arr) = unsafeInlineIO . readForeignArray arr
-    -- unsafePerformIO . readForeignArray arr
   {-# INLINE unsafeLinearIndex #-}
   unsafeLinearSlice ix sz (VArray comp arr) = VArray comp $ extractForeignArray ix sz arr
   {-# INLINE unsafeLinearSlice #-}
@@ -88,7 +87,6 @@ instance (Storable e, Load F ix e) => Source F ix e where
 
 instance (Storable e, Load F ix e) => Manifest F ix e where
   unsafeLinearIndexM (VArray _ arr) = unsafeInlineIO . readForeignArray arr
-    -- unsafePerformIO . readForeignArray arr
   {-# INLINE unsafeLinearIndexM #-}
 
 

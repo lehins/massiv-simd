@@ -55,13 +55,20 @@ spec = do
           res1 = mat !> i
           res2 = matP !> i
        in delay res1 == delay res2
-  describe "Matrix Multiplication" $
+  describe "Matrix Multiplication" $ do
     it "transposed" $
-      property $ \(ArrNE mat) -> do
+      property $ \(ArrNE mat) -> monadicIO $ run $ do
         let matP = computeAs P mat
         res1 <- multiplyTransposed mat (mat :: Array F Ix2 Double)
         res2 <- multiplyTransposed matP matP
-        A.and (A.zipWith (epsilonEq epsilon) res1 res2) `shouldBe` True
+        pure $ epsilonArraysEq epsilon res1 res2
+    it "|*|" $
+      property $ \(ArrSameSz mat1 mat2) -> isNonEmpty (size mat1) ==> monadicIO $ run $ do
+        let mat1P = computeAs P (mat1 :: Array F Ix2 Double)
+            mat2P = computeAs P $ transpose mat2
+        res1 <- mat1 |*| transpose mat2
+        res2 <- mat1P |*| mat2P
+        pure $ epsilonArraysEq epsilon res1 res2
   describe "Folding" $ do
     it "sum" $
       property $ \(arr :: Array D Ix1 Double) ->
@@ -70,7 +77,7 @@ spec = do
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonEq epsilon (A.product arr) (productArrayS (computeAs F arr))
     it "powerSum" $
-      property $ \(arr :: Array D Ix1 Double) (NonNegative pow) ->
+      property $ \(arr :: Array D Ix1 Double) (Positive pow) ->
         epsilonEq epsilon (powerSumArrayS arr pow) (powerSumArrayS (computeAs F arr) pow)
     it "absPowerSum == powerSum even" $
       property $ \(arr :: Array F Ix1 Double) (Positive pow) ->
@@ -89,15 +96,15 @@ spec = do
       property $ \(arr :: Array F Ix1 Double) ->
         epsilonEq epsilon (normL4 (delay arr)) (normL4 arr)
     it "normLn" $
-      property $ \(arr :: Array F Ix1 Double) -> do
+      property $ \(arr :: Array F Ix1 Double) -> monadicIO $ run $ do
         n1 <- normLn 1 arr
         n2 <- normLn 2 arr
         n3 <- normLn 3 arr
         n4 <- normLn 4 arr
-        epsilonEq epsilon (normL1 arr) n1 `shouldBe` True
-        epsilonEq epsilon (normL2 arr) n2 `shouldBe` True
-        epsilonEq epsilon (normL3 arr) n3 `shouldBe` True
-        epsilonEq epsilon (normL4 arr) n4 `shouldBe` True
+        pure (counterexample "normL1" (epsilonEq epsilon (normL1 arr) n1) .&&.
+              counterexample "normL2" (epsilonEq epsilon (normL2 arr) n2) .&&.
+              counterexample "normL3" (epsilonEq epsilon (normL3 arr) n3) .&&.
+              counterexample "normL4" (epsilonEq epsilon (normL4 arr) n4))
     -- it "maximum" $
     --   property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
     --     epsilonEq epsilon (A.maximum' arr) (maximumDouble (Proxy :: Proxy V) (computeAs F arr))
@@ -110,29 +117,29 @@ spec = do
   describe "Mapping" $ do
     it "Plus" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        A.and $ A.zipWith (epsilonEq epsilon) (arr .+ x) (computeAs F arr .+ x)
+        epsilonArraysEq epsilon (arr .+ x) (computeAs F arr .+ x)
     it "Minus" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        A.and $ A.zipWith (epsilonEq epsilon) (arr .- x) (computeAs F arr .- x)
+        epsilonArraysEq epsilon (arr .- x) (computeAs F arr .- x)
     it "Multiply" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        A.and $ A.zipWith (epsilonEq epsilon) (arr .* x) (computeAs F arr .* x)
+        epsilonArraysEq epsilon (arr .* x) (computeAs F arr .* x)
     it "Abs" $
       property $ \(arr :: Array D Ix1 Double) ->
         A.and $ A.zipWith (==) (abs arr) (abs (computeAs F arr))
     it "Power" $
       property $ \(arr :: Array D Ix1 Double) (NonNegative pow) ->
-        A.and $ A.zipWith (epsilonEq epsilon) (arr .^ pow) (computeAs F arr .^ pow)
+        epsilonArraysEq epsilon (arr .^ pow) (computeAs F arr .^ pow)
   describe "Zipping" $ do
     it "addition" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
-        A.and $ A.zipWith (epsilonEq epsilon) (delay arr1 + delay arr2) (arr1 + arr2)
+        epsilonArraysEq epsilon (delay arr1 + delay arr2) (arr1 + arr2)
     it "subtraction" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
-        A.and $ A.zipWith (epsilonEq epsilon) (delay arr1 - delay arr2) (arr1 - arr2)
+        epsilonArraysEq epsilon (delay arr1 - delay arr2) (arr1 - arr2)
     it "multiplication" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
-        A.and $ A.zipWith (epsilonEq epsilon) (delay arr1 * delay arr2) (arr1 * arr2)
+        epsilonArraysEq epsilon (delay arr1 * delay arr2) (arr1 * arr2)
 
 
 data ArrSameSz r ix e = ArrSameSz !(Array r ix e) !(Array r ix e)
@@ -147,13 +154,33 @@ instance (Mutable r ix e, Arbitrary (Array D ix e)) => Arbitrary (ArrSameSz r ix
     pure $ ArrSameSz (compute (extract' zeroIndex sz a1)) (compute (extract' zeroIndex sz a2))
 
 
+epsilonArraysEq ::
+     (Source r1 ix a, Source r2 ix a, Show a, Num a, Ord a)
+  => a
+  -> Array r1 ix a
+  -> Array r2 ix a
+  -> Property
+epsilonArraysEq epsilon arr1 arr2 =
+  size arr1 === size arr2 .&&.
+  foldlS (.&&.) (property True) (A.zipWith (epsilonEq epsilon) arr1 arr2)
 
-epsilonEq :: (Num a, Ord a) =>
+
+-- epsilonEq :: (Num a, Ord a) =>
+--              a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
+--           -> a -- ^ Expected result.
+--           -> a -- ^ Tested value.
+--           -> Bool
+-- epsilonEq epsilon x y = x == y || abs (y - x) <= n * epsilon
+--   where (absx, absy) = (abs x, abs y)
+--         n = 1 + if absx < absy then absy else absx
+
+epsilonEq :: (Show a, Num a, Ord a) =>
              a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
           -> a -- ^ Expected result.
           -> a -- ^ Tested value.
-          -> Bool
-epsilonEq epsilon x y = x == y || abs (y - x) <= n * epsilon
+          -> Property
+epsilonEq epsilon x y = x === y .||. counterexample (show diff ++ " > " ++ show n) (diff <= n)
   where (absx, absy) = (abs x, abs y)
-        n = 1 + if absx < absy then absy else absx
+        n = epsilon * (1 + max absx absy)
+        diff = abs (y - x)
 

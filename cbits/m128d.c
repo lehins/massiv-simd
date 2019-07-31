@@ -163,14 +163,14 @@ double massiv_product__m128d_a(const double init, const double vec[], const long
 }
 
 /**
- * Raise each element to the non-negative power and sum all results.
+ * Raise each element to the positive power and sum all results.
  */
 double massiv_power_sum__m128d_a(const long pow, const double init, const double vec[], const long len) {
   __m128d acc = _mm_set_sd(init);
   for (long i = 0; i < len; i += 2) {
     __m128d vi = _mm_load_pd(&vec[i]);
-    __m128d viacc = _mm_set_pd1(1);
-    for(long p = 0; p < pow; p++)
+    __m128d viacc = vi;
+    for(long p = 1; p < pow; p++)
       viacc = _mm_mul_pd(viacc, vi);
     acc = _mm_add_pd(acc, viacc);
   }
@@ -178,7 +178,7 @@ double massiv_power_sum__m128d_a(const long pow, const double init, const double
 }
 
 /**
- * Compute L-n norm, where n is a positive integer.
+ * Compute the sum of absolute values raised to the power, where n is a positive integer.
  */
 double massiv_abs_power_sum__m128d_a(const long n, const double init, const double vec[], const long len) {
   __m128d acc = _mm_set_sd(init);
