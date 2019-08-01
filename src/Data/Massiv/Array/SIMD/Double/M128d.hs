@@ -60,13 +60,33 @@ multiplyScalarForeignArray arr x =
   liftAlignedForeignArray (`c_multiply__m128d_a` coerce x) (* x) perAlignment arr
 {-# INLINE multiplyScalarForeignArray #-}
 
-absPointwiseForeignArray ::
+divideScalarForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> Double
+  -> ForeignArray ix Double
+  -> IO ()
+divideScalarForeignArray arr x =
+  liftAlignedForeignArray (`c_divide__m128d_a` coerce x) (/ x) perAlignment arr
+{-# INLINE divideScalarForeignArray #-}
+
+recipMultiplyForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> Double
+  -> ForeignArray ix Double
+  -> IO ()
+recipMultiplyForeignArray arr x =
+  liftAlignedForeignArray (`c_recip_multiply__m128d_a` coerce x) (x /) perAlignment arr
+{-# INLINE recipMultiplyForeignArray #-}
+
+absForeignArray ::
      Index ix
   => ForeignArray ix Double
   -> ForeignArray ix Double
   -> IO ()
-absPointwiseForeignArray = liftAlignedForeignArray c_abs__m128d_a abs perAlignment
-{-# INLINE absPointwiseForeignArray #-}
+absForeignArray = liftAlignedForeignArray c_abs__m128d_a abs perAlignment
+{-# INLINE absForeignArray #-}
 
 additionForeignArray ::
      Index ix
@@ -105,21 +125,13 @@ divisionForeignArray ::
 divisionForeignArray = zipWithAlignedForeignArray c_division__m128d_a (/) perAlignment
 {-# INLINE divisionForeignArray #-}
 
-recipPointwiseForeignArray ::
+sqrtForeignArray ::
      Index ix
   => ForeignArray ix Double
   -> ForeignArray ix Double
   -> IO ()
-recipPointwiseForeignArray = liftAlignedForeignArray c_recip__m128d_a recip perAlignment
-{-# INLINE recipPointwiseForeignArray #-}
-
-sqrtPointwiseForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO ()
-sqrtPointwiseForeignArray = liftAlignedForeignArray c_sqrt__m128d_a sqrt perAlignment
-{-# INLINE sqrtPointwiseForeignArray #-}
+sqrtForeignArray = liftAlignedForeignArray c_sqrt__m128d_a sqrt perAlignment
+{-# INLINE sqrtForeignArray #-}
 
 
 sumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
@@ -194,8 +206,11 @@ foreign import ccall unsafe "m128d.c massiv_multiplication__m128d_a"
 foreign import ccall unsafe "m128d.c massiv_division__m128d_a"
   c_division__m128d_a :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
-foreign import ccall unsafe "m128d.c massiv_recip__m128d_a"
-  c_recip__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
+foreign import ccall unsafe "m128d.c massiv_divide__m128d_a"
+  c_divide__m128d_a :: Ptr CDouble -> CDouble -> Ptr CDouble -> CLong -> IO ()
+
+foreign import ccall unsafe "m128d.c massiv_recip_multiply__m128d_a"
+  c_recip_multiply__m128d_a :: Ptr CDouble -> CDouble -> Ptr CDouble -> CLong -> IO ()
 
 foreign import ccall unsafe "m128d.c massiv_sqrt__m128d_a"
   c_sqrt__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()

@@ -114,8 +114,7 @@ instance ( Index ix
 
 
 instance Index ix => Mutable F ix Double where
-  newtype MArray s F ix Double = MArrayDouble (ForeignArray ix
-                                               Double)
+  newtype MArray s F ix Double = MArrayDouble (ForeignArray ix Double)
   msize (MArrayDouble arr) = foreignArraySize arr
   {-# INLINE msize #-}
   unsafeThaw (VArray _ arr) = pure (MArrayDouble arr)
@@ -228,7 +227,7 @@ instance Numeric F Double where
   {-# INLINE minusScalar #-}
   multiplyScalar arr x = splitApply (`SIMD.multiplyScalarForeignArray` x) arr
   {-# INLINE multiplyScalar #-}
-  absPointwise = splitApply SIMD.absPointwiseForeignArray
+  absPointwise = splitApply SIMD.absForeignArray
   {-# INLINE absPointwise #-}
   additionPointwise = unsafeSplitApply2 SIMD.additionForeignArray
   {-# INLINE additionPointwise #-}
@@ -244,11 +243,15 @@ instance Numeric F Double where
   {-# INLINE unsafeLiftArray2 #-}
 
 instance NumericFloat F Double where
+  divideScalar arr x = splitApply (`SIMD.divideScalarForeignArray` x) arr
+  {-# INLINE divideScalar #-}
+  recipMultiplyScalar arr x = splitApply (`SIMD.recipMultiplyForeignArray` x) arr
+  {-# INLINE recipMultiplyScalar #-}
   divisionPointwise = unsafeSplitApply2 SIMD.divisionForeignArray
   {-# INLINE divisionPointwise #-}
-  recipPointwise = splitApply SIMD.recipPointwiseForeignArray
+  recipPointwise = splitApply (`SIMD.recipMultiplyForeignArray` 1)
   {-# INLINE recipPointwise #-}
-  sqrtPointwise = splitApply SIMD.sqrtPointwiseForeignArray
+  sqrtPointwise = splitApply SIMD.sqrtForeignArray
   {-# INLINE sqrtPointwise #-}
 
 instance (Numeric F e, Mutable F ix e, Storable e) => Num (Array F ix e) where

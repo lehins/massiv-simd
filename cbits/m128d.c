@@ -95,14 +95,24 @@ void massiv_division__m128d_a(const double vec1[], const double vec2[], double r
 
 
 /**
- * Compute reciprocal of each element in a vector of doubles and store results in the
- * supplied vector.
+ * Compute reciprocal of each element and multiply it by a scalar in a vector of doubles
+ * and store results in the supplied vector.
  */
-
-void massiv_recip__m128d_a(const double vec[], double res[], const long len){
-  __m128d one128 = _mm_set_pd1(1);
+void massiv_divide__m128d_a(const double vec[], const double den, double res[], const long len){
+  __m128d den128 = _mm_set_pd1(den);
   for (long i = 0; i < len; i += 2) {
-    _mm_storeu_pd(&res[i], _mm_div_pd(one128, _mm_load_pd(&vec[i])));
+    _mm_storeu_pd(&res[i], _mm_div_pd(_mm_load_pd(&vec[i]), den128));
+  }
+}
+
+/**
+ * Compute reciprocal of each element and multiply it by a scalar in a vector of doubles
+ * and store results in the supplied vector.
+ */
+void massiv_recip_multiply__m128d_a(const double vec[], const double num, double res[], const long len){
+  __m128d num128 = _mm_set_pd1(num);
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_div_pd(num128, _mm_load_pd(&vec[i])));
   }
 }
 
@@ -110,7 +120,6 @@ void massiv_recip__m128d_a(const double vec[], double res[], const long len){
  * Compute square root of each element in a vector of doubles and store results in the
  * supplied vector.
  */
-
 void massiv_sqrt__m128d_a(const double vec[], double res[], const long len){
   for (long i = 0; i < len; i += 2) {
     _mm_storeu_pd(&res[i], _mm_sqrt_pd(_mm_load_pd(&vec[i])));
@@ -243,13 +252,10 @@ double massiv_minimum__m128d_a(const double cur, const double vec[], const long 
 //bool massiv_elem__m128d(const double vec[], const double, const long len) {
 
 
-//void massiv_minus__m128d(const double vec1[], const double vec2[], double res[], const long len);
-//void massiv_times__m128d(const double vec1[], const double vec2[], double res[], const long len);
-//void massiv_divide__m128d(const double vec1[], const double vec2[], double res[], const long len);
-//void massiv_and__m128d(const double vec1[], const double vec2[], double res[], const long len);
-//void massiv_or__m128d(const double vec1[], const double vec2[], double res[], const long len);
-//void massiv_nand__m128d(const double vec1[], const double vec2[], double res[], const long len);
-//void massiv_xor__m128d(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_and__m128i(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_or__m128i(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_nand__m128i(const double vec1[], const double vec2[], double res[], const long len);
+//void massiv_xor__m128i(const double vec1[], const double vec2[], double res[], const long len);
 
 
 //double massiv_add__m128d(const double vec[], const double x, const long len);

@@ -131,6 +131,12 @@ spec = do
     it "Multiply" $
       property $ \(arr :: Array D Ix1 Double) x ->
         epsilonArraysEq epsilon (arr .* x) (computeAs F arr .* x)
+    it "Divide" $
+      property $ \(arr :: Array D Ix1 Double) x ->
+        epsilonArraysEq epsilon (arr ./ x) (computeAs F arr ./ x)
+    it "MultiplyDivide" $
+      property $ \(arr :: Array D Ix1 Double) x ->
+        epsilonArraysEq epsilon (x /. arr) (x /. computeAs F arr)
     it "Abs" $
       property $ \(arr :: Array D Ix1 Double) ->
         arraysEq (abs arr) (abs (computeAs F arr))
@@ -143,7 +149,7 @@ spec = do
     it "recip" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonArraysEq epsilon (recip arr) (recip (computeAs F arr))
-  describe "Zipping" $ do
+  describe "Zipping Num" $ do
     it "addition" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
         epsilonArraysEq epsilon (delay arr1 + delay arr2) (arr1 + arr2)
@@ -156,6 +162,23 @@ spec = do
     it "division" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
         epsilonArraysEq epsilon (delay arr1 / delay arr2) (arr1 / arr2)
+  describe "Zipping" $ do
+    it "addition" $
+      property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
+        monadicIO $ run $
+        epsilonArraysEq epsilon <$> (delay arr1 .+. delay arr2) <*> (arr1 .+. arr2)
+    it "subtraction" $
+      property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
+        monadicIO $ run $
+        epsilonArraysEq epsilon <$> (delay arr1 .-. delay arr2) <*> (arr1 .-. arr2)
+    it "multiplication" $
+      property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
+        monadicIO $ run $
+        epsilonArraysEq epsilon <$> (delay arr1 .*. delay arr2) <*> (arr1 .*. arr2)
+    it "division" $
+      property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
+        monadicIO $ run $
+        epsilonArraysEq epsilon <$> (delay arr1 ./. delay arr2) <*> (arr1 ./. arr2)
 
 
 data ArrSameSz r ix e = ArrSameSz !(Array r ix e) !(Array r ix e)
