@@ -79,13 +79,17 @@ spec = do
     it "product" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonEq epsilon (A.product arr) (productArrayS (computeAs F arr))
-    it "powerSum" $
+    it "evenPowerSum" $
       property $ \(arr :: Array D Ix1 Double) (Positive pow) ->
-        epsilonEq epsilon (powerSumArrayS arr pow) (powerSumArrayS (computeAs F arr) pow)
+        even pow ==>
+        epsilonEq epsilon (evenPowerSumArrayS arr pow) (evenPowerSumArrayS (computeAs F arr) pow)
+    it "absPowerSum" $
+      property $ \(arr :: Array D Ix1 Double) (Positive pow) ->
+        epsilonEq epsilon (absPowerSumArrayS arr pow) (absPowerSumArrayS (computeAs F arr) pow)
     it "absPowerSum == powerSum even" $
       property $ \(arr :: Array F Ix1 Double) (Positive pow) ->
         even pow ==>
-        epsilonEq epsilon (powerSumArrayS arr pow) (absPowerSumArrayS arr pow)
+        epsilonEq epsilon (evenPowerSumArrayS arr pow) (absPowerSumArrayS arr pow)
     it "normL1" $
       property $ \(arr :: Array F Ix1 Double) ->
         epsilonEq epsilon (normL1 (delay arr)) (normL1 arr)
@@ -129,10 +133,16 @@ spec = do
         epsilonArraysEq epsilon (arr .* x) (computeAs F arr .* x)
     it "Abs" $
       property $ \(arr :: Array D Ix1 Double) ->
-        A.and $ A.zipWith (==) (abs arr) (abs (computeAs F arr))
+        arraysEq (abs arr) (abs (computeAs F arr))
     it "Power" $
       property $ \(arr :: Array D Ix1 Double) (NonNegative pow) ->
         epsilonArraysEq epsilon (arr .^ pow) (computeAs F arr .^ pow)
+    it "sqrt" $
+      property $ \(arr :: Array D Ix1 Double) ->
+        epsilonArraysEq epsilon (sqrt arr) (sqrt (computeAs F arr))
+    it "recip" $
+      property $ \(arr :: Array D Ix1 Double) ->
+        epsilonArraysEq epsilon (recip arr) (recip (computeAs F arr))
   describe "Zipping" $ do
     it "addition" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
@@ -143,6 +153,9 @@ spec = do
     it "multiplication" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
         epsilonArraysEq epsilon (delay arr1 * delay arr2) (arr1 * arr2)
+    it "division" $
+      property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
+        epsilonArraysEq epsilon (delay arr1 / delay arr2) (arr1 / arr2)
 
 
 data ArrSameSz r ix e = ArrSameSz !(Array r ix e) !(Array r ix e)
@@ -156,9 +169,17 @@ instance (Mutable r ix e, Arbitrary (Array D ix e)) => Arbitrary (ArrSameSz r ix
     let sz = liftSz2 min (size a1) (size a2)
     pure $ ArrSameSz (compute (extract' zeroIndex sz a1)) (compute (extract' zeroIndex sz a2))
 
+arraysEq ::
+     (Source r1 ix a, Source r2 ix a, Show a, Ord a)
+  => Array r1 ix a
+  -> Array r2 ix a
+  -> Property
+arraysEq arr1 arr2 =
+  size arr1 === size arr2 .&&. foldlS (.&&.) (property True) (A.zipWith (===) arr1 arr2)
+
 
 epsilonArraysEq ::
-     (Source r1 ix a, Source r2 ix a, Show a, Num a, Ord a)
+     (Source r1 ix a, Source r2 ix a, Show a, RealFloat a)
   => a
   -> Array r1 ix a
   -> Array r2 ix a
@@ -166,6 +187,30 @@ epsilonArraysEq ::
 epsilonArraysEq epsilon arr1 arr2 =
   size arr1 === size arr2 .&&.
   foldlS (.&&.) (property True) (A.zipWith (epsilonEq epsilon) arr1 arr2)
+
+
+epsilonEq :: (Show a, RealFloat a) =>
+             a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
+          -> a -- ^ Expected result.
+          -> a -- ^ Tested value.
+          -> Property
+epsilonEq epsilon x y =
+  x === y .||. counterexample (show diff ++ " > " ++ show n) (diff <= n) .||. (isNaN x && isNaN y)
+  where
+    (absx, absy) = (abs x, abs y)
+    n = epsilon * (1 + max absx absy)
+    diff = abs (y - x)
+
+-- epsilonEq :: (Show a, Num a, Ord a) =>
+--              a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
+--           -> a -- ^ Expected result.
+--           -> a -- ^ Tested value.
+--           -> Property
+-- epsilonEq epsilon x y = x === y .||. counterexample (show diff ++ " > " ++ show n) (diff <= n)
+--   where (absx, absy) = (abs x, abs y)
+--         n = epsilon * (1 + max absx absy)
+--         diff = abs (y - x)
+
 
 
 -- epsilonEq :: (Num a, Ord a) =>
@@ -176,14 +221,3 @@ epsilonArraysEq epsilon arr1 arr2 =
 -- epsilonEq epsilon x y = x == y || abs (y - x) <= n * epsilon
 --   where (absx, absy) = (abs x, abs y)
 --         n = 1 + if absx < absy then absy else absx
-
-epsilonEq :: (Show a, Num a, Ord a) =>
-             a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
-          -> a -- ^ Expected result.
-          -> a -- ^ Tested value.
-          -> Property
-epsilonEq epsilon x y = x === y .||. counterexample (show diff ++ " > " ++ show n) (diff <= n)
-  where (absx, absy) = (abs x, abs y)
-        n = epsilon * (1 + max absx absy)
-        diff = abs (y - x)
-

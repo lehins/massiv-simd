@@ -49,7 +49,7 @@ void massiv_copy__m128d_a(const double vec[], double res[], const long len) {
 bool massiv_eq__m128d_a(const double vec1[], const double vec2[], const long len) {
   __m128i acc = _mm_set1_epi8(0xff);
   for (long i = 0; i < len; i += 2) {
-    __m128d vi1 = _mm_loadu_pd(&vec1[i]);
+    __m128d vi1 = _mm_load_pd(&vec1[i]);
     __m128d vi2 = _mm_loadu_pd(&vec2[i]);
     acc = _mm_and_si128(acc, _mm_castpd_si128(_mm_cmpeq_pd(vi1, vi2)));
   }
@@ -81,6 +81,39 @@ void massiv_subtraction__m128d_a(const double vec1[], const double vec2[], doubl
 void massiv_multiplication__m128d_a(const double vec1[], const double vec2[], double res[], const long len) {
   for (long i = 0; i < len; i += 2) {
     _mm_storeu_pd(&res[i], _mm_mul_pd(_mm_load_pd(&vec1[i]), _mm_loadu_pd(&vec2[i])));
+  }
+}
+
+/**
+ * Divide two vectors of doubles pointwise and store results in the supplied vector.
+ */
+void massiv_division__m128d_a(const double vec1[], const double vec2[], double res[], const long len) {
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_div_pd(_mm_load_pd(&vec1[i]), _mm_loadu_pd(&vec2[i])));
+  }
+}
+
+
+/**
+ * Compute reciprocal of each element in a vector of doubles and store results in the
+ * supplied vector.
+ */
+
+void massiv_recip__m128d_a(const double vec[], double res[], const long len){
+  __m128d one128 = _mm_set_pd1(1);
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_div_pd(one128, _mm_load_pd(&vec[i])));
+  }
+}
+
+/**
+ * Compute square root of each element in a vector of doubles and store results in the
+ * supplied vector.
+ */
+
+void massiv_sqrt__m128d_a(const double vec[], double res[], const long len){
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_sqrt_pd(_mm_load_pd(&vec[i])));
   }
 }
 
@@ -119,7 +152,7 @@ void massiv_multiply__m128d_a(const double vec[], const double x, double res[], 
 
 
 /**
- * Absolute value of each element in a vector of doubles and store results in the
+ * Compute absolute value of each element in a vector of doubles and store results in the
  * supplied vector.
  */
 void massiv_abs__m128d_a(const double vec[], double res[], const long len) {
@@ -135,7 +168,7 @@ void massiv_abs__m128d_a(const double vec[], double res[], const long len) {
 double massiv_sum__m128d_a(const double init, const double vec[], const long len) {
   __m128d acc = _mm_set_sd(init);
   for (long i = 0; i < len; i += 2) {
-    acc = _mm_add_pd(acc, _mm_loadu_pd(&vec[i]));
+    acc = _mm_add_pd(acc, _mm_load_pd(&vec[i]));
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
 }
@@ -146,21 +179,22 @@ double massiv_sum__m128d_a(const double init, const double vec[], const long len
 double massiv_product__m128d_a(const double init, const double vec[], const long len) {
   __m128d acc = _mm_set_pd(init, 1);
   for (long i = 0; i < len; i += 2) {
-    acc = _mm_mul_pd(acc, _mm_loadu_pd(&vec[i]));
+    acc = _mm_mul_pd(acc, _mm_load_pd(&vec[i]));
   }
   return _mm_cvtsd_f64(acc) * massiv__mm_cvtsd_f64u(acc);
 }
 
 /**
- * Raise each element to the positive power and sum all results.
+ * Raise each element to the positive even power and sum all results.
  */
-double massiv_power_sum__m128d_a(const long pow, const double init, const double vec[], const long len) {
+double massiv_even_power_sum__m128d_a(const long pow, const double init, const double vec[], const long len) {
   __m128d acc = _mm_set_sd(init);
   for (long i = 0; i < len; i += 2) {
     __m128d vi = _mm_load_pd(&vec[i]);
-    __m128d viacc = vi;
-    for(long p = 1; p < pow; p++)
-      viacc = _mm_mul_pd(viacc, vi);
+    __m128d vi2 = _mm_mul_pd(vi, vi);
+    __m128d viacc = vi2;
+    for(long p = 2; p < pow; p+= 2)
+      viacc = _mm_mul_pd(viacc, vi2);
     acc = _mm_add_pd(acc, viacc);
   }
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
@@ -187,31 +221,27 @@ double massiv_abs_power_sum__m128d_a(const long n, const double init, const doub
 /**
  * Find the maximum number in the vector of doubles.
  */
-double massiv_maximum__m128d(const double vec[], const long len) {
-  __m128d cur;
-  long rem;
-  double result;
-  if (len == 1)
-    return vec[0];
-
-  cur = _mm_loadu_pd(&vec[0]);
-  rem = len % 2;
-
-  for (long i = 2; i < len - rem; i += 2) {
-    __m128d vi = _mm_loadu_pd(&vec[i]);
-    cur = _mm_max_pd(cur, vi);
+double massiv_maximum__m128d_a(const double cur, const double vec[], const long len) {
+  __m128d cur128 = _mm_set1_pd(cur);
+  for (long i = 0; i < len; i += 2) {
+    cur128 = _mm_max_pd(cur128, _mm_load_pd(&vec[i]));
   }
-
-  result = max_double(_mm_cvtsd_f64(cur), massiv__mm_cvtsd_f64u(cur));
-  if (rem == 1)
-    return max_double(result, vec[len - 1]);
-  return result;
+  return max_double(_mm_cvtsd_f64(cur128), massiv__mm_cvtsd_f64u(cur128));
 }
 
-//double massiv_minimum__m128d(const double vec[], const long len) {
+/**
+ * Find the minimum number in the vector of doubles.
+ */
+double massiv_minimum__m128d_a(const double cur, const double vec[], const long len) {
+  __m128d cur128 = _mm_set1_pd(cur);
+  for (long i = 0; i < len; i += 2) {
+    cur128 = _mm_min_pd(cur128, _mm_load_pd(&vec[i]));
+  }
+  return min_double(_mm_cvtsd_f64(cur128), massiv__mm_cvtsd_f64u(cur128));
+}
+
 //bool massiv_elem__m128d(const double vec[], const double, const long len) {
 
-//double massiv_sqrt__m128d(const double vec[], const long len);
 
 //void massiv_minus__m128d(const double vec1[], const double vec2[], double res[], const long len);
 //void massiv_times__m128d(const double vec1[], const double vec2[], double res[], const long len);
@@ -344,4 +374,30 @@ void massiv_copy__m128d(const double vec[], double res[], const long len) {
     __m128d vi = _mm_loadu_pd(&vec[i]);
     _mm_storeu_pd(&res[i], vi);
   }
+}
+
+
+
+/**
+ * Find the maximum number in the vector of doubles.
+ */
+double massiv_maximum__m128d(const double vec[], const long len) {
+  __m128d cur;
+  long rem;
+  double result;
+  if (len == 1)
+    return vec[0];
+
+  cur = _mm_loadu_pd(&vec[0]);
+  rem = len % 2;
+
+  for (long i = 2; i < len - rem; i += 2) {
+    __m128d vi = _mm_loadu_pd(&vec[i]);
+    cur = _mm_max_pd(cur, vi);
+  }
+
+  result = max_double(_mm_cvtsd_f64(cur), massiv__mm_cvtsd_f64u(cur));
+  if (rem == 1)
+    return max_double(result, vec[len - 1]);
+  return result;
 }

@@ -21,19 +21,13 @@ perAlignment = 2
 
 multiplySumForeignArray ::
      Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
-multiplySumForeignArray =
-  fold2WithAlignedForeignArray c_dot_product__m128d_a (\acc x y -> acc + x * y) 0 perAlignment
+multiplySumForeignArray = multiplySumAlignedForeignArray c_dot_product__m128d_a perAlignment
 {-# INLINE multiplySumForeignArray #-}
 
 
 eqForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
 eqForeignArray = eqWithAlignedForeignArray c_eq__m128d_a perAlignment
 {-# INLINE eqForeignArray #-}
-
-
--- eqForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
--- eqForeignArray = eqWithForeignArray c_eq__m128d
--- {-# INLINE eqForeignArray #-}
 
 plusScalarForeignArray ::
      Index ix
@@ -102,6 +96,31 @@ multiplicationForeignArray ::
 multiplicationForeignArray = zipWithAlignedForeignArray c_multiplication__m128d_a (*) perAlignment
 {-# INLINE multiplicationForeignArray #-}
 
+divisionForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> ForeignArray ix Double
+  -> ForeignArray ix Double
+  -> IO ()
+divisionForeignArray = zipWithAlignedForeignArray c_division__m128d_a (/) perAlignment
+{-# INLINE divisionForeignArray #-}
+
+recipPointwiseForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> ForeignArray ix Double
+  -> IO ()
+recipPointwiseForeignArray = liftAlignedForeignArray c_recip__m128d_a recip perAlignment
+{-# INLINE recipPointwiseForeignArray #-}
+
+sqrtPointwiseForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> ForeignArray ix Double
+  -> IO ()
+sqrtPointwiseForeignArray = liftAlignedForeignArray c_sqrt__m128d_a sqrt perAlignment
+{-# INLINE sqrtPointwiseForeignArray #-}
+
 
 sumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
 sumForeignArray = foldWithAlignedForeignArray c_sum__m128d_a (+) 0 perAlignment
@@ -111,34 +130,21 @@ productForeignArray :: Index ix => ForeignArray ix Double -> IO Double
 productForeignArray = foldWithAlignedForeignArray c_product__m128d_a (*) 1 perAlignment
 {-# INLINE productForeignArray #-}
 
-powerSumForeignArray :: Index ix => ForeignArray ix Double -> Int -> IO Double
-powerSumForeignArray arr pow =
-  foldWithAlignedForeignArray
-    (c_power_sum__m128d_a (fromIntegral pow))
-    (powerSum pow)
-    0
-    perAlignment
-    arr
-{-# INLINE powerSumForeignArray #-}
-
-powerSum :: (Integral b, Num a) => b -> a -> a -> a
-powerSum pow acc x = acc + x ^ pow
-{-# INLINE powerSum #-}
+evenPowerSumForeignArray :: Index ix => ForeignArray ix Double -> Int -> IO Double
+evenPowerSumForeignArray = evenPowerSumAlignedForeignArray c_even_power_sum__m128d_a perAlignment
+{-# INLINE evenPowerSumForeignArray #-}
 
 absPowerSumForeignArray :: Index ix => ForeignArray ix Double -> Int -> IO Double
-absPowerSumForeignArray arr pow =
-  foldWithAlignedForeignArray
-    (c_abs_power_sum__m128d_a (fromIntegral pow))
-    (\acc -> powerSum pow acc . abs)
-    0
-    perAlignment
-    arr
+absPowerSumForeignArray = absPowerSumAlignedForeignArray c_abs_power_sum__m128d_a perAlignment
 {-# INLINE absPowerSumForeignArray #-}
 
-
 maximumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
-maximumForeignArray = coerce . foldWithForeignArray c_maximum__m128d
+maximumForeignArray = foldNonEmptyWithAlignedForeignArray c_maximum__m128d_a max perAlignment
 {-# INLINE maximumForeignArray #-}
+
+minimumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
+minimumForeignArray = foldNonEmptyWithAlignedForeignArray c_minimum__m128d_a min perAlignment
+{-# INLINE minimumForeignArray #-}
 
 copyForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO ()
 copyForeignArray = copyWithAlignedForeignArray c_copy__m128d_a perAlignment
@@ -185,6 +191,16 @@ foreign import ccall unsafe "m128d.c massiv_subtraction__m128d_a"
 foreign import ccall unsafe "m128d.c massiv_multiplication__m128d_a"
   c_multiplication__m128d_a :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
+foreign import ccall unsafe "m128d.c massiv_division__m128d_a"
+  c_division__m128d_a :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
+
+foreign import ccall unsafe "m128d.c massiv_recip__m128d_a"
+  c_recip__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
+
+foreign import ccall unsafe "m128d.c massiv_sqrt__m128d_a"
+  c_sqrt__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
+
+
 
 foreign import ccall safe "m128d.c massiv_sum__m128d_a"
   c_sum__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
@@ -192,16 +208,16 @@ foreign import ccall safe "m128d.c massiv_sum__m128d_a"
 foreign import ccall safe "m128d.c massiv_product__m128d_a"
   c_product__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall safe "m128d.c massiv_power_sum__m128d_a"
-  c_power_sum__m128d_a :: CLong -> CDouble -> Ptr CDouble -> CLong -> IO CDouble
+foreign import ccall safe "m128d.c massiv_even_power_sum__m128d_a"
+  c_even_power_sum__m128d_a :: CLong -> CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 foreign import ccall safe "m128d.c massiv_abs_power_sum__m128d_a"
   c_abs_power_sum__m128d_a :: CLong -> CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 
-foreign import ccall safe "m128d.c massiv_maximum__m128d"
-  c_maximum__m128d :: Ptr CDouble -> CLong -> IO CDouble
+foreign import ccall safe "m128d.c massiv_maximum__m128d_a"
+  c_maximum__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
+foreign import ccall safe "m128d.c massiv_minimum__m128d_a"
+  c_minimum__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall unsafe "m128d.c massiv_addition__m128d"
-  c_addition__m128d :: Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CLong -> IO ()

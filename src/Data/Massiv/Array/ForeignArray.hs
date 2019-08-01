@@ -43,11 +43,16 @@ module Data.Massiv.Array.ForeignArray
   , eqWithAlignedForeignArray
   , foldWithAlignedForeignArray
   , fold2WithAlignedForeignArray
+  , foldNonEmptyWithAlignedForeignArray
   -- ** Lifting
   , liftForeignArray
   , zipWithForeignArray
   , liftAlignedForeignArray
   , zipWithAlignedForeignArray
+  -- ** Numeric
+  , evenPowerSumAlignedForeignArray
+  , absPowerSumAlignedForeignArray
+  , multiplySumAlignedForeignArray
   ) where
 
 import Control.Monad.Primitive
@@ -63,9 +68,8 @@ import GHC.Ptr
 import GHC.Exts
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
---import Foreign.Ptr
 import Foreign.Storable
-import Prelude hiding (mapM)
+
 
 #include "massiv.h"
 
@@ -572,7 +576,7 @@ zipWithAlignedForeignArray zipWithAligned f =
 
 
 foldWithAlignedForeignArray ::
-     forall a b c e ix. (Storable a, Coercible a b, Coercible e c, Index ix)
+     (Storable a, Coercible a b, Coercible e c, Index ix)
   => (e -> Ptr b -> CLong -> IO e)
   -> (c -> a -> c)
   -> c
@@ -600,6 +604,20 @@ fold2WithAlignedForeignArray foldAligned foldUnaligned =
 {-# INLINE fold2WithAlignedForeignArray #-}
 
 
+foldNonEmptyWithAlignedForeignArray ::
+     (Storable a, Coercible a b, Coercible e a, Index ix)
+  => (e -> Ptr b -> CLong -> IO e)
+  -> (a -> a -> a)
+  -> Int -- ^ Alignment. In number of elements, rather than bytes.
+  -> ForeignArray ix a
+  -> IO a
+foldNonEmptyWithAlignedForeignArray foldAligned foldUnaligned perAlignment arr = do
+  e0 <- readForeignArray arr 0
+  let arrNo0 = extractForeignArray 1 (lengthForeignArray arr - 1) arr
+  foldWithAlignedForeignArray foldAligned foldUnaligned e0 perAlignment arrNo0
+{-# INLINE foldNonEmptyWithAlignedForeignArray #-}
+
+
 eqWithAlignedForeignArray ::
      (Eq a, Storable a, Coercible a b, Index ix)
   => (Ptr b -> Ptr b -> CLong -> IO CBool)
@@ -611,8 +629,8 @@ eqWithAlignedForeignArray eqAction =
   fold2WithAlignedForeignArray eqWithPtrs (\acc x y -> acc && x == y) True
   where
     eqWithPtrs acc p1 p2 sz
-      | p1 == p2 = pure True -- arrays are same whenpointers are equal, even when adjusted
-                             -- for alignement
+      | p1 == p2 = pure True -- arrays are same whenever two pointers are equal, even when
+                             -- they are adjusted for alignement
       | not acc = pure False
       | otherwise = cboolToBool <$> eqAction p1 p2 sz
     {-# INLINE eqWithPtrs #-}
@@ -641,3 +659,45 @@ copyWithAlignedForeignArray ::
 copyWithAlignedForeignArray copyAction =
   apply2AlignedForeignArray (const copyAction) (\ _ ptr1 ptr2 -> peek ptr1 >>= poke ptr2) ()
 {-# INLINE copyWithAlignedForeignArray #-}
+
+evenPowerSumAlignedForeignArray ::
+     (Storable c, Index ix, Num c, Coercible e c)
+  => (CLong -> e -> Ptr e -> CLong -> IO e)
+  -> Int -- ^ Alignement. In number of elements, rather than bytes.
+  -> ForeignArray ix c
+  -> Int -- ^ Power
+  -> IO c
+evenPowerSumAlignedForeignArray action perAlignment arr pow =
+  foldWithAlignedForeignArray (action (fromIntegral pow)) (powerSum pow) 0 perAlignment arr
+{-# INLINE evenPowerSumAlignedForeignArray #-}
+
+absPowerSumAlignedForeignArray ::
+     (Storable c, Index ix, Num c, Coercible e c)
+  => (CLong -> e -> Ptr e -> CLong -> IO e)
+  -> Int -- ^ Alignement. In number of elements, rather than bytes.
+  -> ForeignArray ix c
+  -> Int -- ^ AbsPower
+  -> IO c
+absPowerSumAlignedForeignArray action perAlignment arr pow =
+  foldWithAlignedForeignArray
+    (action (fromIntegral pow))
+    (\acc -> powerSum pow acc . abs)
+    0
+    perAlignment
+    arr
+{-# INLINE absPowerSumAlignedForeignArray #-}
+
+powerSum :: (Integral b, Num a) => b -> a -> a -> a
+powerSum pow acc x = acc + x ^ pow
+{-# INLINE powerSum #-}
+
+multiplySumAlignedForeignArray ::
+     (Storable a, Index ix, Num a, Coercible a b, Coercible e a)
+  => (e -> Ptr b -> Ptr b -> CLong -> IO e)
+  -> Int -- ^ Alignement. In number of elements, rather than bytes.
+  -> ForeignArray ix a
+  -> ForeignArray ix a
+  -> IO a
+multiplySumAlignedForeignArray multiplySumAligned =
+  fold2WithAlignedForeignArray multiplySumAligned (\acc x y -> acc + x * y) 0
+{-# INLINE multiplySumAlignedForeignArray #-}

@@ -22,12 +22,13 @@ import Control.Monad.Primitive
 import Control.Scheduler
 import Data.Massiv.Array as A
 import Data.Massiv.Array.ForeignArray
+import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
+--import qualified Data.Massiv.Array.SIMD.Double.M256d as SIMD
 import Data.Massiv.Array.SIMD.Internal
 import Data.Massiv.Array.Unsafe
 import Data.Massiv.Core.List
 import Data.Massiv.Core.Operations
-import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
---import qualified Data.Massiv.Array.SIMD.Double.M256d as SIMD
+import Numeric
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -206,18 +207,21 @@ applySameSizeArray2 f a1 a2
 {-# INLINE applySameSizeArray2 #-}
 
 
-instance Numeric F Double where
+instance ReduceNumeric F Double where
   sumArrayS (VArray _ arr) = unsafeInlineIO $ SIMD.sumForeignArray arr
   {-# INLINE sumArrayS #-}
   productArrayS (VArray _ arr) = unsafeInlineIO $ SIMD.productForeignArray arr
   {-# INLINE productArrayS #-}
-  powerSumArrayS (VArray _ arr) = unsafeInlineIO . SIMD.powerSumForeignArray arr
-  {-# INLINE powerSumArrayS #-}
+  evenPowerSumArrayS (VArray _ arr) = unsafeInlineIO . SIMD.evenPowerSumForeignArray arr
+  {-# INLINE evenPowerSumArrayS #-}
   absPowerSumArrayS (VArray _ arr) = unsafeInlineIO . SIMD.absPowerSumForeignArray arr
   {-# INLINE absPowerSumArrayS #-}
   multiplySumArrayS (VArray _ arr1) (VArray _ arr2) =
     unsafeInlineIO $ SIMD.multiplySumForeignArray arr1 arr2
   {-# INLINE multiplySumArrayS #-}
+
+
+instance Numeric F Double where
   plusScalar arr x = splitApply (`SIMD.plusScalarForeignArray` x) arr
   {-# INLINE plusScalar #-}
   minusScalar arr x = splitApply (`SIMD.minusScalarForeignArray` x) arr
@@ -239,6 +243,14 @@ instance Numeric F Double where
       f (unsafeLinearIndex a1 i) (unsafeLinearIndex a2 i)
   {-# INLINE unsafeLiftArray2 #-}
 
+instance NumericFloat F Double where
+  divisionPointwise = unsafeSplitApply2 SIMD.divisionForeignArray
+  {-# INLINE divisionPointwise #-}
+  recipPointwise = splitApply SIMD.recipPointwiseForeignArray
+  {-# INLINE recipPointwise #-}
+  sqrtPointwise = splitApply SIMD.sqrtPointwiseForeignArray
+  {-# INLINE sqrtPointwise #-}
+
 instance (Numeric F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
   (+) = applySameSizeArray2 additionPointwise
   {-# INLINE (+) #-}
@@ -252,3 +264,53 @@ instance (Numeric F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
   {-# INLINE signum #-}
   fromInteger = singleton . fromInteger
   {-# INLINE fromInteger #-}
+
+instance (NumericFloat F e, Mutable F ix e, Storable e) => Fractional (Array F ix e) where
+  (/) = applySameSizeArray2 divisionPointwise
+  {-# INLINE (/) #-}
+  recip = recipPointwise
+  {-# INLINE recip #-}
+  fromRational = singleton . fromRational
+  {-# INLINE fromRational #-}
+
+instance (NumericFloat F e, Mutable F ix e, Storable e) => Floating (Array F ix e) where
+  pi    = singleton pi
+  {-# INLINE pi #-}
+  exp   = unsafeLiftArray exp
+  {-# INLINE exp #-}
+  log   = unsafeLiftArray log
+  {-# INLINE log #-}
+  sin   = unsafeLiftArray sin
+  {-# INLINE sin #-}
+  cos   = unsafeLiftArray cos
+  {-# INLINE cos #-}
+  asin  = unsafeLiftArray asin
+  {-# INLINE asin #-}
+  atan  = unsafeLiftArray atan
+  {-# INLINE atan #-}
+  acos  = unsafeLiftArray acos
+  {-# INLINE acos #-}
+  sinh  = unsafeLiftArray sinh
+  {-# INLINE sinh #-}
+  cosh  = unsafeLiftArray cosh
+  {-# INLINE cosh #-}
+  asinh = unsafeLiftArray asinh
+  {-# INLINE asinh #-}
+  atanh = unsafeLiftArray atanh
+  {-# INLINE atanh #-}
+  acosh = unsafeLiftArray acosh
+  {-# INLINE acosh #-}
+
+  -- Override default implementation
+  sqrt = sqrtPointwise
+  {-# INLINE sqrt #-}
+  (**) = applySameSizeArray2 (unsafeLiftArray2 (**))
+  {-# INLINE (**) #-}
+  tan = unsafeLiftArray tan
+  {-# INLINE tan #-}
+  tanh = unsafeLiftArray tanh
+  {-# INLINE tanh #-}
+  log1p = unsafeLiftArray log1p
+  {-# INLINE log1p #-}
+  expm1 = unsafeLiftArray expm1
+  {-# INLINE expm1 #-}
