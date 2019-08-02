@@ -11,8 +11,8 @@
 module Data.Massiv.Array.SIMD.Internal
   ( F(..)
   , Array(..)
-  , withMVArrayPtr
-  , unsafeWithVArrayPtr
+  , withMFArrayPtr
+  , unsafeWithFArrayPtr
   ) where
 
 import Control.Monad.Primitive
@@ -28,7 +28,7 @@ import Prelude hiding (mapM)
 -- Interface (FFI). Used for SIMD vectorization with Intel Intrinsics.
 data F = F deriving Show
 
-data instance Array F ix e = VArray
+data instance Array F ix e = FArray
   { vComp  :: !Comp
   , vArray :: !(ForeignArray ix e)
   }
@@ -38,9 +38,9 @@ data instance Array F ix e = VArray
 -- parrent array if that one was a result of a slice.
 --
 -- @since 0.1.0
-unsafeWithVArrayPtr :: Array F ix e -> (Ptr e -> IO a) -> IO a
-unsafeWithVArrayPtr (VArray _ arr) = withForeignArray arr
-{-# INLINE unsafeWithVArrayPtr #-}
+unsafeWithFArrayPtr :: Array F ix e -> (Ptr e -> IO a) -> IO a
+unsafeWithFArrayPtr (FArray _ arr) = withForeignArray arr
+{-# INLINE unsafeWithFArrayPtr #-}
 
 -- A bit of unituitive trickery:
 --  * `Array F ix e` isn't any different from `MArray s v ix e`, except that it is always
@@ -52,7 +52,7 @@ unsafeWithVArrayPtr (VArray _ arr) = withForeignArray arr
 -- | Access the pointer to the first element of the mutable array.
 --
 -- @since 0.1.0
-withMVArrayPtr :: Mutable F ix e => MArray RealWorld F ix e -> (Ptr e -> IO a) -> IO a
-withMVArrayPtr marr f = unsafeFreeze Seq marr >>= (`unsafeWithVArrayPtr` f)
-{-# INLINE withMVArrayPtr #-}
+withMFArrayPtr :: Mutable F ix e => MArray RealWorld F ix e -> (Ptr e -> IO a) -> IO a
+withMFArrayPtr marr f = unsafeFreeze Seq marr >>= (`unsafeWithFArrayPtr` f)
+{-# INLINE withMFArrayPtr #-}
 

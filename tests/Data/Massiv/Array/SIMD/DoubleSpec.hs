@@ -9,6 +9,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.Massiv.Array.SIMD.DoubleSpec where
 
+import Data.Int
 import Data.Massiv.Array as A
 import Data.Massiv.Array.SIMD
 import Data.Massiv.Core.Operations
@@ -149,6 +150,9 @@ spec = do
     it "recip" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonArraysEq epsilon (recip arr) (recip (computeAs F arr))
+    it "truncate" $
+      property $ \(arr :: Array D Ix1 Double) ->
+        arraysEq (truncatePointwise arr :: Array D Ix1 Int64) (truncatePointwise (computeAs F arr))
   describe "Zipping Num" $ do
     it "addition" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->

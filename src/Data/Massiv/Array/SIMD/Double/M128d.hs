@@ -8,12 +8,13 @@
 --
 module Data.Massiv.Array.SIMD.Double.M128d where
 
+import Data.Coerce
+import Data.Int
 import Data.Massiv.Array.ForeignArray
 import Data.Massiv.Core.Index
 import Foreign.C.Types
 import Foreign.Ptr (Ptr)
-import Data.Coerce
-
+import GHC.Float (double2Int)
 
 perAlignment :: Int
 perAlignment = 2
@@ -133,6 +134,18 @@ sqrtForeignArray ::
 sqrtForeignArray = liftAlignedForeignArray c_sqrt__m128d_a sqrt perAlignment
 {-# INLINE sqrtForeignArray #-}
 
+truncateForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> ForeignArray ix Int64
+  -> IO ()
+truncateForeignArray =
+  liftAlignedForeignArray'
+    c_truncate__m128d_a
+    (fromIntegral . double2Int) -- FIXME: 32bit machine is a problem
+    perAlignment
+{-# INLINE truncateForeignArray #-}
+
 
 sumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
 sumForeignArray = foldWithAlignedForeignArray c_sum__m128d_a (+) 0 perAlignment
@@ -215,24 +228,27 @@ foreign import ccall unsafe "m128d.c massiv_recip_multiply__m128d_a"
 foreign import ccall unsafe "m128d.c massiv_sqrt__m128d_a"
   c_sqrt__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
+foreign import ccall unsafe "m128d.c massiv_truncate__m128d_a"
+  c_truncate__m128d_a :: Ptr CDouble -> Ptr CLLong -> CLong -> IO ()
 
 
-foreign import ccall safe "m128d.c massiv_sum__m128d_a"
+
+foreign import ccall unsafe "m128d.c massiv_sum__m128d_a"
   c_sum__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall safe "m128d.c massiv_product__m128d_a"
+foreign import ccall unsafe "m128d.c massiv_product__m128d_a"
   c_product__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall safe "m128d.c massiv_even_power_sum__m128d_a"
+foreign import ccall unsafe "m128d.c massiv_even_power_sum__m128d_a"
   c_even_power_sum__m128d_a :: CLong -> CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall safe "m128d.c massiv_abs_power_sum__m128d_a"
+foreign import ccall unsafe "m128d.c massiv_abs_power_sum__m128d_a"
   c_abs_power_sum__m128d_a :: CLong -> CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 
-foreign import ccall safe "m128d.c massiv_maximum__m128d_a"
+foreign import ccall unsafe "m128d.c massiv_maximum__m128d_a"
   c_maximum__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
-foreign import ccall safe "m128d.c massiv_minimum__m128d_a"
+foreign import ccall unsafe "m128d.c massiv_minimum__m128d_a"
   c_minimum__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 

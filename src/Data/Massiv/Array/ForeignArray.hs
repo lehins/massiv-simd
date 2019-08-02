@@ -20,6 +20,10 @@ module Data.Massiv.Array.ForeignArray
   , mallocForeignArray
   , callocForeignArray
   , reallocForeignArray
+  -- * Memory adjustment
+  , copyForeignArray
+  , moveForeignArray
+  , fillForeignArray
   -- * Aligned memory allocation
   , newAlignedForeignArray
   , mallocAlignedForeignArray
@@ -32,6 +36,7 @@ module Data.Massiv.Array.ForeignArray
   , sliceForeignArray
   , extractForeignArray
   -- ** Modifying
+  , castForeignArray
   , setWithForeignArray
   , copyWithForeignArray
   , fillWithAlignedForeignArray
@@ -48,6 +53,7 @@ module Data.Massiv.Array.ForeignArray
   , liftForeignArray
   , zipWithForeignArray
   , liftAlignedForeignArray
+  , liftAlignedForeignArray'
   , zipWithAlignedForeignArray
   -- ** Numeric
   , evenPowerSumAlignedForeignArray
@@ -55,20 +61,22 @@ module Data.Massiv.Array.ForeignArray
   , multiplySumAlignedForeignArray
   ) where
 
-import Control.Monad.Primitive
 import Control.DeepSeq
+import Control.Monad.Primitive
 import Data.Coerce
-import Data.Primitive.ByteArray
 import Data.Massiv.Array.Unsafe (Sz(SafeSz))
 import Data.Massiv.Core.Index
+import Data.Primitive.ByteArray
+import Data.Word
 import Foreign.C
 import Foreign.ForeignPtr
-import GHC.ForeignPtr
-import GHC.Ptr
-import GHC.Exts
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
+import Foreign.Marshal.Utils (fillBytes)
 import Foreign.Storable
+import GHC.Exts
+import GHC.ForeignPtr
+import GHC.Ptr
 
 
 #include "massiv.h"
@@ -98,7 +106,8 @@ data ForeignArray ix e = ForeignArray
   }
 
 
-foreign import ccall unsafe "massiv.c &free_flagged" finalizerFreeFlagged :: FinalizerEnvPtr CBool a
+foreign import ccall unsafe "massiv.c &massiv_free_flagged"
+  finalizerFreeFlagged :: FinalizerEnvPtr CBool a
 
 
 instance NFData ix => NFData (ForeignArray ix e) where
@@ -115,6 +124,7 @@ newForeignArray ::
      forall e ix. (Storable e, Index ix) => Sz ix -> IO (ForeignArray ix e)
 newForeignArray sz = newAlignedForeignArray sz (alignment (undefined :: e))
 {-# INLINE newForeignArray #-}
+
 
 -- | Allocate an array using @malloc@, but do not initialize any elements.
 --
@@ -211,6 +221,44 @@ isSameForeignArray (ForeignArray _ _ _ (ForeignPtr p1 c1)) (ForeignArray _ _ _ (
       sameMutableByteArray (MutableByteArray mba1#) (MutableByteArray mba2#)
     _ -> False
 {-# INLINE isSameForeignArray #-}
+
+-- | Copy one array into another with @memcpy@. Copied areas may /not/ overlap.
+copyForeignArray ::
+     (Index ix2, Storable e)
+  => ForeignArray ix1 e -- ^ Source array
+  -> ForeignArray ix2 e -- ^ Destination array
+  -> IO ()
+copyForeignArray arrSrc arrDest =
+  withForeignArray arrSrc $ \ ptrSrc ->
+    withForeignArray arrDest $ \ ptrDest ->
+      copyArray ptrDest ptrSrc (unSz (lengthForeignArray arrDest))
+{-# INLINE copyForeignArray #-}
+
+-- | Copy one array into another with @memmove@. Copied areas may overlap.
+moveForeignArray ::
+     (Index ix2, Storable e)
+  => ForeignArray ix1 e -- ^ Source array
+  -> ForeignArray ix2 e -- ^ Destination array
+  -> IO ()
+moveForeignArray arrSrc arrDest =
+  withForeignArray arrSrc $ \ptrSrc ->
+    withForeignArray arrDest $ \ptrDest ->
+      moveArray ptrDest ptrSrc (unSz (lengthForeignArray arrDest))
+{-# INLINE moveForeignArray #-}
+
+-- | Fill an array with the same byte using @memset@.
+fillForeignArray ::
+     (Index ix, Storable e)
+  => ForeignArray ix e -- ^ Source array
+  -> Word8 -- ^ Byte value to use for filling the elements
+  -> IO ()
+fillForeignArray arr w8 =
+  withForeignArray arr $ \ptr -> fillBytes ptr w8 (getsz arr undefined)
+  where
+    getsz :: Storable e => ForeignArray ix e -> e -> Int
+    getsz _ dummy = unSz (lengthForeignArray arr) * sizeOf dummy
+{-# INLINE fillForeignArray #-}
+
 
 -------------
 -- Aligned --
@@ -514,6 +562,33 @@ apply2AlignedForeignArray applyAligned apply initAcc perAlignment arr1 arr2 = do
       applyLoop (lengthBefore + lengthAligned) lengthTotal (coerce resAligned)
 {-# INLINE apply2AlignedForeignArray #-}
 
+
+apply2AlignedForeignArray' ::
+     (Storable a, Storable b, Index ix, Coercible a x, Coercible b y, Coercible e c)
+  => (e -> Ptr x -> Ptr y -> CLong -> IO e)
+  -> (c -> Ptr a -> Ptr b -> IO c)
+  -> c
+  -> Int -- ^ Alignment. In number of elements, rather than bytes.
+  -> ForeignArray ix a
+  -> ForeignArray ix b
+  -> IO c
+apply2AlignedForeignArray' applyAligned apply initAcc perAlignment arr1 arr2 = do
+  let sz = lengthForeignArray arr1
+      lengthTotal = unSz sz
+  withAlignedForeignArray arr1 perAlignment sz $ \ptr1 lengthBefore ptr1Aligned lengthAligned ->
+    withForeignArray arr2 $ \ptr2 -> do
+      let applyLoop from to iAcc =
+            loopM from (< to) (+ 1) iAcc $ \i acc ->
+              apply acc (ptr1 `advancePtr` i) (ptr2 `advancePtr` i)
+          {-# INLINE applyLoop #-}
+          ptr1Adjusted = coerce ptr1Aligned
+          ptr2Adjusted = coerce (ptr2 `advancePtr` lengthBefore)
+      resBefore <- applyLoop 0 lengthBefore initAcc
+      resAligned <-
+        applyAligned (coerce resBefore) ptr1Adjusted ptr2Adjusted (fromIntegral lengthAligned)
+      applyLoop (lengthBefore + lengthAligned) lengthTotal (coerce resAligned)
+{-# INLINE apply2AlignedForeignArray' #-}
+
 apply3AlignedForeignArray ::
      (Storable a, Index ix, Coercible a b, Coercible e c)
   => (e -> Ptr b -> Ptr b -> Ptr b -> CLong -> IO e)
@@ -556,6 +631,18 @@ liftAlignedForeignArray ::
 liftAlignedForeignArray liftAligned f =
   apply2AlignedForeignArray (const liftAligned) (\_ p1 p2 -> poke p2 . f =<< peek p1) ()
 {-# INLINE liftAlignedForeignArray #-}
+
+liftAlignedForeignArray' ::
+     (Storable a, Storable b, Index ix, Coercible a x, Coercible b y)
+  => (Ptr x -> Ptr y -> CLong -> IO ())
+  -> (a -> b)
+  -> Int -- ^ Alignment. In number of elements, rather than bytes.
+  -> ForeignArray ix a
+  -> ForeignArray ix b
+  -> IO ()
+liftAlignedForeignArray' liftAligned f =
+  apply2AlignedForeignArray' (const liftAligned) (\_ p1 p2 -> poke p2 . f =<< peek p1) ()
+{-# INLINE liftAlignedForeignArray' #-}
 
 
 zipWithAlignedForeignArray ::
@@ -635,6 +722,12 @@ eqWithAlignedForeignArray eqAction =
       | otherwise = cboolToBool <$> eqAction p1 p2 sz
     {-# INLINE eqWithPtrs #-}
 {-# INLINE eqWithAlignedForeignArray #-}
+
+castForeignArray :: ForeignArray ix a -> ForeignArray ix b
+castForeignArray (ForeignArray sz flag ptr fptr) =
+  ForeignArray sz flag (castPtr ptr) (castForeignPtr fptr)
+{-# INLINE castForeignArray #-}
+
 
 
 fillWithAlignedForeignArray ::

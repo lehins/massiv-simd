@@ -1,4 +1,5 @@
 #include "m128d.h"
+#include <smmintrin.h>
 
 inline double max_double(double num1, double num2){
   return (num1 > num2 ) ? num1 : num2;
@@ -126,6 +127,26 @@ void massiv_sqrt__m128d_a(const double vec[], double res[], const long len){
   }
 }
 
+/**
+ * Truncate each element in a vector of doubles and store results in the supplied vector.
+ *
+ * Requires: SSE4.1 due to _mm_round_pd()
+ *
+ * void massiv_truncate__m128d_a(const double vec[], long long res[], const long len){
+ */
+
+
+/**
+ * Truncate each element in a vector of doubles and store results in the supplied vector.
+ */
+void massiv_truncate__m128d_a(const double vec[], long long res[], const long len){
+  __m128d x128;
+  for (long i = 0; i < len; i += 2) {
+    x128 = _mm_load_pd(&vec[i]);
+    res[i] = (long long) _mm_cvtsd_f64(x128);
+    res[i + 1] = (long long) massiv__mm_cvtsd_f64u(x128);
+  }
+}
 
 /**
  * Add a scalar to a vector of doubles and store results in the supplied vector.
