@@ -30,12 +30,6 @@ eqForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -
 eqForeignArray = eqWithForeignArray c_eq__m128d
 {-# INLINE eqForeignArray #-}
 
-
--- additionForeignArray ::
---      Index ix => ForeignArray ix Double -> ForeignArray ix Double -> ForeignArray ix Double -> IO ()
--- additionForeignArray = zipWithForeignArray c_addition__m128d
--- {-# INLINE additionForeignArray #-}
-
 additionForeignArray ::
      Index ix => ForeignArray ix Double -> ForeignArray ix Double -> ForeignArray ix Double -> IO ()
 additionForeignArray = zipWithAlignedForeignArray c_addition__m256d_a (+) perAlignment

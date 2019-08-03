@@ -19,6 +19,7 @@ module Data.Massiv.Array.SIMD.Double where
 import Control.DeepSeq
 import Control.Monad (when)
 import Control.Monad.Primitive
+import Control.Monad.ST (runST)
 import Control.Scheduler
 import Data.Int
 import Data.Massiv.Array as A
@@ -254,6 +255,8 @@ instance NumArray F Double where
   {-# INLINE minusScalar #-}
   multiplyScalar arr x = splitApply (`SIMD.multiplyScalarForeignArray` x) arr
   {-# INLINE multiplyScalar #-}
+  powerScalar arr p = splitApply (`SIMD.powerScalarForeignArray` p) arr
+  {-# INLINE powerScalar #-}
   absPointwise = splitApply SIMD.absForeignArray
   {-# INLINE absPointwise #-}
   additionPointwise = unsafeSplitApply2 SIMD.additionForeignArray
@@ -268,6 +271,8 @@ instance NumArray F Double where
     makeArrayLinear (vComp a1 <> vComp a2) (size a1) $ \ !i ->
       f (unsafeLinearIndex a1 i) (unsafeLinearIndex a2 i)
   {-# INLINE unsafeLiftArray2 #-}
+  broadcastArray sz e = runST $ unsafeFreeze Seq =<< initializeNew (Just e) sz
+  {-# INLINE broadcastArray #-}
 
 instance FloatArray F Double where
   divideScalar arr x = splitApply (`SIMD.divideScalarForeignArray` x) arr

@@ -143,7 +143,8 @@ spec = do
         arraysEq (abs arr) (abs (computeAs F arr))
     it "power" $
       property $ \(arr :: Array D Ix1 Double) (NonNegative pow) ->
-        epsilonArraysEq epsilon (arr .^ pow) (computeAs F arr .^ pow)
+        monadicIO $ run
+          (epsilonArraysEq epsilon <$> (arr .^ pow) <*> (computeAs F arr .^ pow))
     it "sqrt" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonArraysEq epsilon (sqrt arr) (sqrt (computeAs F arr))

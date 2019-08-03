@@ -62,6 +62,16 @@ multiplyScalarForeignArray arr x =
   liftAlignedForeignArray (`c_multiply__m128d_a` coerce x) (* x) perAlignment arr
 {-# INLINE multiplyScalarForeignArray #-}
 
+powerScalarForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> Int
+  -> ForeignArray ix Double
+  -> IO ()
+powerScalarForeignArray arr x =
+  liftAlignedForeignArray (`c_power__m128d_a` fromIntegral x) (^ x) perAlignment arr
+{-# INLINE powerScalarForeignArray #-}
+
 divideScalarForeignArray ::
      Index ix
   => ForeignArray ix Double
@@ -141,7 +151,7 @@ truncateForeignArray ::
   -> ForeignArray ix Int64
   -> IO ()
 truncateForeignArray =
-  liftAlignedForeignArray'
+  liftAlignedForeignArray
     c_truncate_64i__m128d_a
     (fromIntegral . double2Int) -- FIXME: 32bit machine is a problem
     perAlignment
@@ -212,6 +222,9 @@ foreign import ccall unsafe "m128d.c massiv_minus__m128d_a"
 
 foreign import ccall unsafe "m128d.c massiv_multiply__m128d_a"
   c_multiply__m128d_a :: Ptr CDouble -> CDouble -> Ptr CDouble -> CLong -> IO ()
+
+foreign import ccall unsafe "m128d.c massiv_power__m128d_a"
+  c_power__m128d_a :: Ptr CDouble -> CLong -> Ptr CDouble -> CLong -> IO ()
 
 foreign import ccall unsafe "m128d.c massiv_abs__m128d_a"
   c_abs__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()

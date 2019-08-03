@@ -215,6 +215,20 @@ void massiv_multiply__m128d_a(const double vec[], const double x, double res[], 
   }
 }
 
+/**
+ * Raise each element of the vector to some positive power.
+ */
+void massiv_power__m128d_a(const double vec[], const long pow, double res[], const long len) {
+  __m128d vi, vi1;
+  for (long i = 0; i < len; i += 2) {
+    vi1 = _mm_load_pd(&vec[i]);
+    vi = vi1;
+    for(long p = 1; p < pow; p++)
+      vi = _mm_mul_pd(vi, vi1);
+    _mm_storeu_pd(&res[i], vi);
+  }
+}
+
 
 /**
  * Compute absolute value of each element in a vector of doubles and store results in the

@@ -32,7 +32,6 @@ module Data.Massiv.Array.ForeignArray
   , liftForeignArray
   , zipWithForeignArray
   , liftAlignedForeignArray
-  , liftAlignedForeignArray'
   , zipWithAlignedForeignArray
   -- ** Numeric
   , evenPowerSumAlignedForeignArray
@@ -209,13 +208,13 @@ applyAlignedForeignArray applyAligned apply initAcc perAlignment arr = do
 {-# INLINE applyAlignedForeignArray #-}
 
 apply2AlignedForeignArray ::
-     (Storable a, Index ix, Coercible a b, Coercible e c)
-  => (e -> Ptr b -> Ptr b -> CLong -> IO e)
-  -> (c -> Ptr a -> Ptr a -> IO c)
+     (Storable a, Storable b, Index ix, Coercible a x, Coercible b y, Coercible e c)
+  => (e -> Ptr x -> Ptr y -> CLong -> IO e)
+  -> (c -> Ptr a -> Ptr b -> IO c)
   -> c
   -> Int -- ^ Alignment. In number of elements, rather than bytes.
   -> ForeignArray ix a
-  -> ForeignArray ix a
+  -> ForeignArray ix b
   -> IO c
 apply2AlignedForeignArray applyAligned apply initAcc perAlignment arr1 arr2 = do
   let sz = lengthForeignArray arr1
@@ -234,42 +233,15 @@ apply2AlignedForeignArray applyAligned apply initAcc perAlignment arr1 arr2 = do
       applyLoop (lengthBefore + lengthAligned) lengthTotal (coerce resAligned)
 {-# INLINE apply2AlignedForeignArray #-}
 
-
-apply2AlignedForeignArray' ::
+apply3AlignedForeignArray ::
      (Storable a, Storable b, Index ix, Coercible a x, Coercible b y, Coercible e c)
-  => (e -> Ptr x -> Ptr y -> CLong -> IO e)
-  -> (c -> Ptr a -> Ptr b -> IO c)
+  => (e -> Ptr x -> Ptr x -> Ptr y -> CLong -> IO e)
+  -> (c -> Ptr a -> Ptr a -> Ptr b -> IO c)
   -> c
   -> Int -- ^ Alignment. In number of elements, rather than bytes.
+  -> ForeignArray ix a
   -> ForeignArray ix a
   -> ForeignArray ix b
-  -> IO c
-apply2AlignedForeignArray' applyAligned apply initAcc perAlignment arr1 arr2 = do
-  let sz = lengthForeignArray arr1
-      lengthTotal = unSz sz
-  withAlignedForeignArray arr1 perAlignment sz $ \ptr1 lengthBefore ptr1Aligned lengthAligned ->
-    withForeignArray arr2 $ \ptr2 -> do
-      let applyLoop from to iAcc =
-            loopM from (< to) (+ 1) iAcc $ \i acc ->
-              apply acc (ptr1 `advancePtr` i) (ptr2 `advancePtr` i)
-          {-# INLINE applyLoop #-}
-          ptr1Adjusted = coerce ptr1Aligned
-          ptr2Adjusted = coerce (ptr2 `advancePtr` lengthBefore)
-      resBefore <- applyLoop 0 lengthBefore initAcc
-      resAligned <-
-        applyAligned (coerce resBefore) ptr1Adjusted ptr2Adjusted (fromIntegral lengthAligned)
-      applyLoop (lengthBefore + lengthAligned) lengthTotal (coerce resAligned)
-{-# INLINE apply2AlignedForeignArray' #-}
-
-apply3AlignedForeignArray ::
-     (Storable a, Index ix, Coercible a b, Coercible e c)
-  => (e -> Ptr b -> Ptr b -> Ptr b -> CLong -> IO e)
-  -> (c -> Ptr a -> Ptr a -> Ptr a -> IO c)
-  -> c
-  -> Int -- ^ Alignment. In number of elements, rather than bytes.
-  -> ForeignArray ix a
-  -> ForeignArray ix a
-  -> ForeignArray ix a
   -> IO c
 apply3AlignedForeignArray applyAligned apply initAcc perAlignment arr1 arr2 arr3 = do
   let sz = lengthForeignArray arr1
@@ -291,20 +263,7 @@ apply3AlignedForeignArray applyAligned apply initAcc perAlignment arr1 arr2 arr3
         applyLoop (lengthBefore + lengthAligned) lengthTotal (coerce resAligned)
 {-# INLINE apply3AlignedForeignArray #-}
 
-
 liftAlignedForeignArray ::
-     (Storable a, Index ix, Coercible a b)
-  => (Ptr b -> Ptr b -> CLong -> IO ())
-  -> (a -> a)
-  -> Int -- ^ Alignment. In number of elements, rather than bytes.
-  -> ForeignArray ix a
-  -> ForeignArray ix a
-  -> IO ()
-liftAlignedForeignArray liftAligned f =
-  apply2AlignedForeignArray (const liftAligned) (\_ p1 p2 -> poke p2 . f =<< peek p1) ()
-{-# INLINE liftAlignedForeignArray #-}
-
-liftAlignedForeignArray' ::
      (Storable a, Storable b, Index ix, Coercible a x, Coercible b y)
   => (Ptr x -> Ptr y -> CLong -> IO ())
   -> (a -> b)
@@ -312,19 +271,19 @@ liftAlignedForeignArray' ::
   -> ForeignArray ix a
   -> ForeignArray ix b
   -> IO ()
-liftAlignedForeignArray' liftAligned f =
-  apply2AlignedForeignArray' (const liftAligned) (\_ p1 p2 -> poke p2 . f =<< peek p1) ()
-{-# INLINE liftAlignedForeignArray' #-}
+liftAlignedForeignArray liftAligned f =
+  apply2AlignedForeignArray (const liftAligned) (\_ p1 p2 -> poke p2 . f =<< peek p1) ()
+{-# INLINE liftAlignedForeignArray #-}
 
 
 zipWithAlignedForeignArray ::
-     (Storable a, Index ix, Coercible a b, Show a, Num a, Eq a)
-  => (Ptr b -> Ptr b -> Ptr b -> CLong -> IO ())
-  -> (a -> a -> a)
+     (Storable a, Storable b, Index ix, Coercible a x, Coercible b y)
+  => (Ptr x -> Ptr x -> Ptr y -> CLong -> IO ())
+  -> (a -> a -> b)
   -> Int -- ^ Alignment. In number of elements, rather than bytes.
   -> ForeignArray ix a
   -> ForeignArray ix a
-  -> ForeignArray ix a
+  -> ForeignArray ix b
   -> IO ()
 zipWithAlignedForeignArray zipWithAligned f =
   apply3AlignedForeignArray
