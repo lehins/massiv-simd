@@ -21,7 +21,8 @@ library
                      , Data.Massiv.Array.SIMD
                      , Data.Massiv.Array.SIMD.Internal
 
-  other-modules:       Data.Massiv.Array.SIMD.Double.M128d
+  other-modules:       Data.Massiv.Array.ForeignArray.Internal
+                     , Data.Massiv.Array.SIMD.Double.M128d
                      , Data.Massiv.Array.SIMD.Double.M256d
   build-depends:       base >= 4.9 && < 5
                      , deepseq

@@ -58,13 +58,13 @@ copyForeignArray :: ForeignArray ix1 Double -> Ix1 -> ForeignArray ix2 Double ->
 copyForeignArray = copyWithForeignArray c_copy__m128d
 {-# INLINE copyForeignArray #-}
 
-setForeignArray :: ForeignArray ix Double -> Ix1 -> Sz1 -> Double -> IO ()
-setForeignArray = setWithForeignArray c_set__m128d
-{-# INLINE setForeignArray #-}
+fillForeignArray :: ForeignArray ix Double -> Ix1 -> Sz1 -> Double -> IO ()
+fillForeignArray = fillWithForeignArray c_fill__m128d
+{-# INLINE fillForeignArray #-}
 
 
-foreign import ccall unsafe "m128d.c massiv_set__m128d"
-  c_set__m128d :: Ptr CDouble -> CLong -> CDouble -> IO ()
+foreign import ccall unsafe "m128d.c massiv_fill__m128d"
+  c_fill__m128d :: Ptr CDouble -> CLong -> CDouble -> IO ()
 
 foreign import ccall unsafe "m128d.c massiv_copy__m128d"
   c_copy__m128d :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()

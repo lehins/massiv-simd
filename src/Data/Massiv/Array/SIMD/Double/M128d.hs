@@ -175,7 +175,7 @@ copyForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double
 copyForeignArray = copyWithAlignedForeignArray c_copy__m128d_a perAlignment
 {-# INLINE copyForeignArray #-}
 
-fillForeignArray :: Index ix => Double -> ForeignArray ix Double -> IO ()
+fillForeignArray :: Index ix => ForeignArray ix Double -> Double -> IO ()
 fillForeignArray = fillWithAlignedForeignArray c_fill__m128d_a perAlignment
 {-# INLINE fillForeignArray #-}
 

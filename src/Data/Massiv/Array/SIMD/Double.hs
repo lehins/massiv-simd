@@ -147,7 +147,7 @@ instance Index ix => Mutable F ix Double where
     case mdef of
       Just val -> do
         marr@(MArrayD farr) <- unsafeNew sz
-        unsafePrimToPrim $ SIMD.fillForeignArray val farr
+        unsafePrimToPrim $ SIMD.fillForeignArray farr val
         return marr
       Nothing -> do
         marr@(MArrayD farr) <- unsafeNew sz
@@ -159,7 +159,7 @@ instance Index ix => Mutable F ix Double where
   unsafeLinearWrite (MArrayD arr) i = unsafePrimToPrim . writeForeignArray arr i
   {-# INLINE unsafeLinearWrite #-}
   unsafeLinearSet (MArrayD arr) offset len val =
-    unsafePrimToPrim $ SIMD.fillForeignArray val (extractForeignArray offset len arr)
+    unsafePrimToPrim $ SIMD.fillForeignArray (extractForeignArray offset len arr) val
   {-# INLINE unsafeLinearSet #-}
   unsafeLinearCopy (MArrayD arrSrc) iFrom (MArrayD arrDst) iTo k =
     unsafePrimToPrim $
