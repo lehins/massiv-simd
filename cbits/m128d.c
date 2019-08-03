@@ -127,19 +127,54 @@ void massiv_sqrt__m128d_a(const double vec[], double res[], const long len){
   }
 }
 
+
 /**
- * Truncate each element in a vector of doubles and store results in the supplied vector.
+ * Round each element in a vector of doubles and store results in the supplied vector of doubles.
  *
  * Requires: SSE4.1 due to _mm_round_pd()
- *
- * void massiv_truncate__m128d_a(const double vec[], long long res[], const long len){
  */
+void massiv_round__m128d_a(const double vec[], double res[], const long len){
+  __m128d x128;
+  for (long i = 0; i < len; i += 2) {
+    x128 = _mm_round_pd(_mm_load_pd(&vec[i]), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+    _mm_storeu_pd(&res[i], x128);
+  }
+}
 
+
+/**
+ * Round each element in a vector of doubles and store results in the supplied vector of
+ * 64bit integers.
+ *
+ * Requires: SSE4.1 due to _mm_round_pd()
+ */
+void massiv_round_64i__m128d_a(const double vec[], long long res[], const long len){
+  __m128d x128;
+  for (long i = 0; i < len; i += 2) {
+    x128 = _mm_round_pd(_mm_load_pd(&vec[i]), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+    res[i] = (long long) _mm_cvtsd_f64(x128);
+    res[i + 1] = (long long) massiv__mm_cvtsd_f64u(x128);
+  }
+}
+
+
+/**
+ * Truncate each element in a vector of doubles and store results in the supplied vector of doubles.
+ *
+ * Requires: SSE4.1 due to _mm_round_pd()
+ */
+void massiv_truncate__m128d_a(const double vec[], double res[], const long len){
+  __m128d x128;
+  for (long i = 0; i < len; i += 2) {
+    x128 = _mm_round_pd(_mm_load_pd(&vec[i]), _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
+    _mm_storeu_pd(&res[i], x128);
+  }
+}
 
 /**
  * Truncate each element in a vector of doubles and store results in the supplied vector.
  */
-void massiv_truncate__m128d_a(const double vec[], long long res[], const long len){
+void massiv_truncate_64i__m128d_a(const double vec[], long long res[], const long len){
   __m128d x128;
   for (long i = 0; i < len; i += 2) {
     x128 = _mm_load_pd(&vec[i]);

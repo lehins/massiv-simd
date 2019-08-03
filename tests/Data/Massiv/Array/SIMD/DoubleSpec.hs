@@ -123,25 +123,25 @@ spec = do
     --   property $ \(arr1 :: Array D Ix1 Double) (arr2 :: Array D Ix1 Double) ->
     --     arr1 /= arr2 ==> not (eqDouble (computeAs F arr1) (computeAs F arr2))
   describe "Mapping" $ do
-    it "Plus" $
+    it "plus" $
       property $ \(arr :: Array D Ix1 Double) x ->
         epsilonArraysEq epsilon (arr .+ x) (computeAs F arr .+ x)
-    it "Minus" $
+    it "minus" $
       property $ \(arr :: Array D Ix1 Double) x ->
         epsilonArraysEq epsilon (arr .- x) (computeAs F arr .- x)
-    it "Multiply" $
+    it "multiply" $
       property $ \(arr :: Array D Ix1 Double) x ->
         epsilonArraysEq epsilon (arr .* x) (computeAs F arr .* x)
-    it "Divide" $
+    it "divide" $
       property $ \(arr :: Array D Ix1 Double) x ->
         epsilonArraysEq epsilon (arr ./ x) (computeAs F arr ./ x)
-    it "MultiplyDivide" $
+    it "multiplyDivide" $
       property $ \(arr :: Array D Ix1 Double) x ->
         epsilonArraysEq epsilon (x /. arr) (x /. computeAs F arr)
-    it "Abs" $
+    it "abs" $
       property $ \(arr :: Array D Ix1 Double) ->
         arraysEq (abs arr) (abs (computeAs F arr))
-    it "Power" $
+    it "power" $
       property $ \(arr :: Array D Ix1 Double) (NonNegative pow) ->
         epsilonArraysEq epsilon (arr .^ pow) (computeAs F arr .^ pow)
     it "sqrt" $
@@ -150,9 +150,12 @@ spec = do
     it "recip" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonArraysEq epsilon (recip arr) (recip (computeAs F arr))
-    it "truncate" $
+    it "round" $
       property $ \(arr :: Array D Ix1 Double) ->
-        arraysEq (truncatePointwise arr :: Array D Ix1 Int64) (truncatePointwise (computeAs F arr))
+        arraysEq (roundPointwise arr :: Array D Ix1 Double) (roundPointwise (computeAs F arr))
+    -- it "truncate" $
+    --   property $ \(arr :: Array D Ix1 Double) ->
+    --     arraysEq (truncatePointwise arr :: Array D Ix1 Int64) (truncatePointwise (computeAs F arr))
   describe "Zipping Num" $ do
     it "addition" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->

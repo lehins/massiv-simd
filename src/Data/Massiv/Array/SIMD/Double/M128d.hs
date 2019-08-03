@@ -12,6 +12,7 @@ import Data.Coerce
 import Data.Int
 import Data.Massiv.Array.ForeignArray
 import Data.Massiv.Core.Index
+import Data.Massiv.Core.Operations (roundDouble)
 import Foreign.C.Types
 import Foreign.Ptr (Ptr)
 import GHC.Float (double2Int)
@@ -141,10 +142,18 @@ truncateForeignArray ::
   -> IO ()
 truncateForeignArray =
   liftAlignedForeignArray'
-    c_truncate__m128d_a
+    c_truncate_64i__m128d_a
     (fromIntegral . double2Int) -- FIXME: 32bit machine is a problem
     perAlignment
 {-# INLINE truncateForeignArray #-}
+
+roundForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> ForeignArray ix Double
+  -> IO ()
+roundForeignArray = liftAlignedForeignArray c_round__m128d_a roundDouble perAlignment
+{-# INLINE roundForeignArray #-}
 
 
 sumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
@@ -228,8 +237,15 @@ foreign import ccall unsafe "m128d.c massiv_recip_multiply__m128d_a"
 foreign import ccall unsafe "m128d.c massiv_sqrt__m128d_a"
   c_sqrt__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
+
+foreign import ccall unsafe "m128d.c massiv_truncate_64i__m128d_a"
+  c_truncate_64i__m128d_a :: Ptr CDouble -> Ptr CLLong -> CLong -> IO ()
+
 foreign import ccall unsafe "m128d.c massiv_truncate__m128d_a"
   c_truncate__m128d_a :: Ptr CDouble -> Ptr CLLong -> CLong -> IO ()
+
+foreign import ccall unsafe "m128d.c massiv_round__m128d_a"
+  c_round__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()
 
 
 

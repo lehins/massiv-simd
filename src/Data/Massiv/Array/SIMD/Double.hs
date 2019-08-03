@@ -233,7 +233,7 @@ applySameSizeArray2 f a1 a2
 {-# INLINE applySameSizeArray2 #-}
 
 
-instance ReduceNumeric F Double where
+instance ReduceNumArray F Double where
   sumArrayS (FArray _ arr) = unsafeInlineIO $ SIMD.sumForeignArray arr
   {-# INLINE sumArrayS #-}
   productArrayS (FArray _ arr) = unsafeInlineIO $ SIMD.productForeignArray arr
@@ -247,7 +247,7 @@ instance ReduceNumeric F Double where
   {-# INLINE multiplySumArrayS #-}
 
 
-instance Numeric F Double where
+instance NumArray F Double where
   plusScalar arr x = splitApply (`SIMD.plusScalarForeignArray` x) arr
   {-# INLINE plusScalar #-}
   minusScalar arr x = splitApply (`SIMD.minusScalarForeignArray` x) arr
@@ -262,14 +262,14 @@ instance Numeric F Double where
   {-# INLINE subtractionPointwise #-}
   multiplicationPointwise = unsafeSplitApply2 SIMD.multiplicationForeignArray
   {-# INLINE multiplicationPointwise #-}
-  unsafeLiftArray f a = makeArrayLinear (vComp a) (size a) (f . unsafeLinearIndex a)
-  {-# INLINE unsafeLiftArray #-}
+  liftArray f a = makeArrayLinear (vComp a) (size a) (f . unsafeLinearIndex a)
+  {-# INLINE liftArray #-}
   unsafeLiftArray2 f a1 a2 =
     makeArrayLinear (vComp a1 <> vComp a2) (size a1) $ \ !i ->
       f (unsafeLinearIndex a1 i) (unsafeLinearIndex a2 i)
   {-# INLINE unsafeLiftArray2 #-}
 
-instance NumericFloat F Double where
+instance FloatArray F Double where
   divideScalar arr x = splitApply (`SIMD.divideScalarForeignArray` x) arr
   {-# INLINE divideScalar #-}
   recipMultiplyScalar arr x = splitApply (`SIMD.recipMultiplyForeignArray` x) arr
@@ -281,14 +281,14 @@ instance NumericFloat F Double where
   sqrtPointwise = splitApply SIMD.sqrtForeignArray
   {-# INLINE sqrtPointwise #-}
 
-instance RoundNumeric F Double Int64 where
-  truncatePointwise = splitApply SIMD.truncateForeignArray
-  {-# INLINE truncatePointwise #-}
+instance RoundFloatArray F Double Double where
+  roundPointwise = splitApply SIMD.roundForeignArray
+  {-# INLINE roundPointwise #-}
 
 castFArray :: Array F ix a -> Array F ix e
 castFArray (FArray c a) = FArray c (castForeignArray a)
 
-instance (Numeric F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
+instance (NumArray F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
   (+) = applySameSizeArray2 additionPointwise
   {-# INLINE (+) #-}
   (-) = applySameSizeArray2 subtractionPointwise
@@ -302,7 +302,7 @@ instance (Numeric F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
   fromInteger = singleton . fromInteger
   {-# INLINE fromInteger #-}
 
-instance (NumericFloat F e, Mutable F ix e, Storable e) => Fractional (Array F ix e) where
+instance (FloatArray F e, Mutable F ix e, Storable e) => Fractional (Array F ix e) where
   (/) = applySameSizeArray2 divisionPointwise
   {-# INLINE (/) #-}
   recip = recipPointwise
@@ -310,32 +310,32 @@ instance (NumericFloat F e, Mutable F ix e, Storable e) => Fractional (Array F i
   fromRational = singleton . fromRational
   {-# INLINE fromRational #-}
 
-instance (NumericFloat F e, Mutable F ix e, Storable e) => Floating (Array F ix e) where
+instance (FloatArray F e, Mutable F ix e, Storable e) => Floating (Array F ix e) where
   pi    = singleton pi
   {-# INLINE pi #-}
-  exp   = unsafeLiftArray exp
+  exp   = liftArray exp
   {-# INLINE exp #-}
-  log   = unsafeLiftArray log
+  log   = liftArray log
   {-# INLINE log #-}
-  sin   = unsafeLiftArray sin
+  sin   = liftArray sin
   {-# INLINE sin #-}
-  cos   = unsafeLiftArray cos
+  cos   = liftArray cos
   {-# INLINE cos #-}
-  asin  = unsafeLiftArray asin
+  asin  = liftArray asin
   {-# INLINE asin #-}
-  atan  = unsafeLiftArray atan
+  atan  = liftArray atan
   {-# INLINE atan #-}
-  acos  = unsafeLiftArray acos
+  acos  = liftArray acos
   {-# INLINE acos #-}
-  sinh  = unsafeLiftArray sinh
+  sinh  = liftArray sinh
   {-# INLINE sinh #-}
-  cosh  = unsafeLiftArray cosh
+  cosh  = liftArray cosh
   {-# INLINE cosh #-}
-  asinh = unsafeLiftArray asinh
+  asinh = liftArray asinh
   {-# INLINE asinh #-}
-  atanh = unsafeLiftArray atanh
+  atanh = liftArray atanh
   {-# INLINE atanh #-}
-  acosh = unsafeLiftArray acosh
+  acosh = liftArray acosh
   {-# INLINE acosh #-}
 
   -- Override default implementation
@@ -343,11 +343,11 @@ instance (NumericFloat F e, Mutable F ix e, Storable e) => Floating (Array F ix 
   {-# INLINE sqrt #-}
   (**) = applySameSizeArray2 (unsafeLiftArray2 (**))
   {-# INLINE (**) #-}
-  tan = unsafeLiftArray tan
+  tan = liftArray tan
   {-# INLINE tan #-}
-  tanh = unsafeLiftArray tanh
+  tanh = liftArray tanh
   {-# INLINE tanh #-}
-  log1p = unsafeLiftArray log1p
+  log1p = liftArray log1p
   {-# INLINE log1p #-}
-  expm1 = unsafeLiftArray expm1
+  expm1 = liftArray expm1
   {-# INLINE expm1 #-}
