@@ -51,6 +51,16 @@ minusScalarForeignArray arr x =
   liftAlignedForeignArray (`c_minus__m128d_a` coerce x) (subtract x) perAlignment arr
 {-# INLINE minusScalarForeignArray #-}
 
+negatePlusScalarForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> Double
+  -> ForeignArray ix Double
+  -> IO ()
+negatePlusScalarForeignArray arr x =
+  liftAlignedForeignArray (`c_negate_plus__m128d_a` coerce x) (x -) perAlignment arr
+{-# INLINE negatePlusScalarForeignArray #-}
+
 
 multiplyScalarForeignArray ::
      Index ix
@@ -71,6 +81,16 @@ powerScalarForeignArray ::
 powerScalarForeignArray arr x =
   liftAlignedForeignArray (`c_power__m128d_a` fromIntegral x) (^ x) perAlignment arr
 {-# INLINE powerScalarForeignArray #-}
+
+recipPowerScalarForeignArray ::
+     Index ix
+  => ForeignArray ix Double
+  -> Int
+  -> ForeignArray ix Double
+  -> IO ()
+recipPowerScalarForeignArray arr x =
+  liftAlignedForeignArray (`c_recip_power__m128d_a` fromIntegral x) ((^ x) . recip) perAlignment arr
+{-# INLINE recipPowerScalarForeignArray #-}
 
 divideScalarForeignArray ::
      Index ix
@@ -224,11 +244,17 @@ foreign import ccall unsafe "m128d.c massiv_plus__m128d_a"
 foreign import ccall unsafe "m128d.c massiv_minus__m128d_a"
   c_minus__m128d_a :: Ptr CDouble -> CDouble -> Ptr CDouble -> CLong -> IO ()
 
+foreign import ccall unsafe "m128d.c massiv_negate_plus__m128d_a"
+  c_negate_plus__m128d_a :: Ptr CDouble -> CDouble -> Ptr CDouble -> CLong -> IO ()
+
 foreign import ccall unsafe "m128d.c massiv_multiply__m128d_a"
   c_multiply__m128d_a :: Ptr CDouble -> CDouble -> Ptr CDouble -> CLong -> IO ()
 
 foreign import ccall unsafe "m128d.c massiv_power__m128d_a"
   c_power__m128d_a :: Ptr CDouble -> CLong -> Ptr CDouble -> CLong -> IO ()
+
+foreign import ccall unsafe "m128d.c massiv_recip_power__m128d_a"
+  c_recip_power__m128d_a :: Ptr CDouble -> CLong -> Ptr CDouble -> CLong -> IO ()
 
 foreign import ccall unsafe "m128d.c massiv_abs__m128d_a"
   c_abs__m128d_a :: Ptr CDouble -> Ptr CDouble -> CLong -> IO ()

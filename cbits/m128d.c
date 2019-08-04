@@ -203,6 +203,17 @@ void massiv_minus__m128d_a(const double vec[], const double x, double res[], con
   }
 }
 
+/**
+ * Negate each element and add a scalar to it in the vector of doubles, store the results in
+ * the supplied vector.
+ */
+void massiv_negate_plus__m128d_a(const double vec[], const double x, double res[], const long len) {
+  __m128d x128 = _mm_set_pd1(x);
+  for (long i = 0; i < len; i += 2) {
+    _mm_storeu_pd(&res[i], _mm_sub_pd(x128, _mm_load_pd(&vec[i])));
+  }
+}
+
 
 /**
  * Multiply with a scalar each element in a vector of doubles and store results in the
@@ -222,6 +233,21 @@ void massiv_power__m128d_a(const double vec[], const long pow, double res[], con
   __m128d vi, vi1;
   for (long i = 0; i < len; i += 2) {
     vi1 = _mm_load_pd(&vec[i]);
+    vi = vi1;
+    for(long p = 1; p < pow; p++)
+      vi = _mm_mul_pd(vi, vi1);
+    _mm_storeu_pd(&res[i], vi);
+  }
+}
+
+
+/**
+ * Raise a reciprocal of each element of the vector to some positive power.
+ */
+void massiv_recip_power__m128d_a(const double vec[], const long pow, double res[], const long len) {
+  __m128d vi, vi1, num1 = _mm_set_pd1(1);
+  for (long i = 0; i < len; i += 2) {
+    vi1 = _mm_div_pd(num1, _mm_load_pd(&vec[i]));
     vi = vi1;
     for(long p = 1; p < pow; p++)
       vi = _mm_mul_pd(vi, vi1);

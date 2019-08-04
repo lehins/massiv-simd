@@ -37,20 +37,20 @@ spec = do
   describe "Dot Product" $ do
     it "any" $
       property $ \(ArrSameSz x y :: ArrSameSz F Ix1 Double) ->
-        epsilonEq epsilon (either throw id (dotProductM x y)) (A.sum (A.zipWith (*) x y))
+        epsilonEq epsilon (either throw id (x !.! y)) (A.sum (A.zipWith (*) x y))
     it "slice" $
       property $ \(ArrIx mat (i :. _)) ->
         let matP = computeAs P (mat :: Array F Ix2 Double)
             x = mat !> i
             y = matP !> i
-         in epsilonEq epsilon (either throw id (dotProductM x x)) (A.sum (A.zipWith (*) y y))
+         in epsilonEq epsilon (either throw id (x !.! x)) (A.sum (A.zipWith (*) y y))
     it "misaligned" $
       property $ \(ArrSameSz x' y' :: ArrSameSz F Ix1 Double) ->
         let sz = unSz (size x')
             x = extract' 0 (Sz (sz - 1)) x'
             y = extract' 1 (Sz (sz - 1)) y'
         in sz /= 0 ==>
-           epsilonEq epsilon (either throw id (dotProductM x y)) (A.sum (A.zipWith (*) x y))
+           epsilonEq epsilon (either throw id (x !.! y)) (A.sum (A.zipWith (*) x y))
   describe "OuterSlice" $
     it "V vs P" $
     property $ \(ArrIx mat (i :. _)) ->
@@ -65,12 +65,12 @@ spec = do
         res1 <- multiplyTransposed mat (mat :: Array F Ix2 Double)
         res2 <- multiplyTransposed matP matP
         pure $ epsilonArraysEq epsilon res1 res2
-    it "|*|" $
+    it "!><!" $
       property $ \(ArrSameSz mat1 mat2) -> isNonEmpty (size mat1) ==> monadicIO $ run $ do
         let mat1P = computeAs P (mat1 :: Array F Ix2 Double)
             mat2P = computeAs P $ transpose mat2
-        res1 <- mat1 |*| transpose mat2
-        res2 <- mat1P |*| mat2P
+        res1 <- mat1 !><! transpose mat2
+        res2 <- mat1P !><! mat2P
         pure $ epsilonArraysEq epsilon res1 res2
   describe "Folding" $ do
     it "sum" $
@@ -132,26 +132,32 @@ spec = do
   describe "Mapping" $ do
     it "plus" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr .+ x) (computeAs F arr .+ x)
-    it "minus" $
+        epsilonArraysEq epsilon (arr !+ x) (computeAs F arr !+ x)
+    it "minus scalar" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr .- x) (computeAs F arr .- x)
+        epsilonArraysEq epsilon (arr !- x) (computeAs F arr !- x)
+    it "minus array" $
+      property $ \(arr :: Array D Ix1 Double) x ->
+        epsilonArraysEq epsilon (x -! arr) (x -! computeAs F arr)
     it "multiply" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr .* x) (computeAs F arr .* x)
+        epsilonArraysEq epsilon (arr !* x) (computeAs F arr !* x)
     it "divide" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr ./ x) (computeAs F arr ./ x)
+        epsilonArraysEq epsilon (arr !/ x) (computeAs F arr !/ x)
     it "multiplyDivide" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (x /. arr) (x /. computeAs F arr)
+        epsilonArraysEq epsilon (x /! arr) (x /! computeAs F arr)
     it "abs" $
       property $ \(arr :: Array D Ix1 Double) ->
         arraysEq (abs arr) (abs (computeAs F arr))
-    it "power" $
+    it "power (^)" $
       property $ \(arr :: Array D Ix1 Double) (NonNegative pow) ->
         monadicIO $ run
-          (epsilonArraysEq epsilon <$> (arr .^ pow) <*> (computeAs F arr .^ pow))
+          (epsilonArraysEq epsilon <$> (arr !^ pow) <*> (computeAs F arr !^ pow))
+    it "power (^^)" $
+      property $ \(arr :: Array D Ix1 Double) pow ->
+        epsilonArraysEq epsilon (arr !^^ pow) (computeAs F arr !^^ pow)
     it "sqrt" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonArraysEq epsilon (sqrt arr) (sqrt (computeAs F arr))
@@ -181,19 +187,19 @@ spec = do
     it "addition" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
         monadicIO $ run $
-        epsilonArraysEq epsilon <$> (delay arr1 .+. delay arr2) <*> (arr1 .+. arr2)
+        epsilonArraysEq epsilon <$> (delay arr1 !+! delay arr2) <*> (arr1 !+! arr2)
     it "subtraction" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
         monadicIO $ run $
-        epsilonArraysEq epsilon <$> (delay arr1 .-. delay arr2) <*> (arr1 .-. arr2)
+        epsilonArraysEq epsilon <$> (delay arr1 !-! delay arr2) <*> (arr1 !-! arr2)
     it "multiplication" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
         monadicIO $ run $
-        epsilonArraysEq epsilon <$> (delay arr1 .*. delay arr2) <*> (arr1 .*. arr2)
+        epsilonArraysEq epsilon <$> (delay arr1 !*! delay arr2) <*> (arr1 !*! arr2)
     it "division" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
         monadicIO $ run $
-        epsilonArraysEq epsilon <$> (delay arr1 ./. delay arr2) <*> (arr1 ./. arr2)
+        epsilonArraysEq epsilon <$> (delay arr1 !/! delay arr2) <*> (arr1 !/! arr2)
 
 
 data ArrSameSz r ix e = ArrSameSz !(Array r ix e) !(Array r ix e)

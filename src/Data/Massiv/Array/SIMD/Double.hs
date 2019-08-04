@@ -258,6 +258,8 @@ instance NumArray F Double where
   {-# INLINE plusScalar #-}
   minusScalar arr x = splitApply (`SIMD.minusScalarForeignArray` x) arr
   {-# INLINE minusScalar #-}
+  negatePlusScalar arr x = splitApply (`SIMD.negatePlusScalarForeignArray` x) arr
+  {-# INLINE negatePlusScalar #-}
   multiplyScalar arr x = splitApply (`SIMD.multiplyScalarForeignArray` x) arr
   {-# INLINE multiplyScalar #-}
   powerScalar arr p = splitApply (`SIMD.powerScalarForeignArray` p) arr
@@ -282,10 +284,10 @@ instance FloatArray F Double where
   {-# INLINE divideScalar #-}
   recipMultiplyScalar arr x = splitApply (`SIMD.recipMultiplyForeignArray` x) arr
   {-# INLINE recipMultiplyScalar #-}
+  recipPowerScalar arr p = splitApply (`SIMD.recipPowerScalarForeignArray` p) arr
+  {-# INLINE recipPowerScalar #-}
   divisionPointwise = unsafeSplitApply2 SIMD.divisionForeignArray
   {-# INLINE divisionPointwise #-}
-  recipPointwise = splitApply (`SIMD.recipMultiplyForeignArray` 1)
-  {-# INLINE recipPointwise #-}
   sqrtPointwise = splitApply SIMD.sqrtForeignArray
   {-# INLINE sqrtPointwise #-}
 
@@ -320,7 +322,7 @@ instance (NumArray F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
 instance (FloatArray F e, Mutable F ix e, Storable e) => Fractional (Array F ix e) where
   (/) = applySameSizeArray2 divisionPointwise
   {-# INLINE (/) #-}
-  recip = recipPointwise
+  recip = (`recipMultiplyScalar` 1)
   {-# INLINE recip #-}
   fromRational = singleton . fromRational
   {-# INLINE fromRational #-}
