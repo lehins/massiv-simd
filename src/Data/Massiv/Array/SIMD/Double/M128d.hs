@@ -182,12 +182,16 @@ absPowerSumForeignArray :: Index ix => ForeignArray ix Double -> Int -> IO Doubl
 absPowerSumForeignArray = absPowerSumAlignedForeignArray c_abs_power_sum__m128d_a perAlignment
 {-# INLINE absPowerSumForeignArray #-}
 
-maximumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
-maximumForeignArray = foldNonEmptyWithAlignedForeignArray c_maximum__m128d_a max perAlignment
+absMaxForeignArray :: Index ix => ForeignArray ix Double -> IO Double
+absMaxForeignArray = absMaxAlignedForeignArray c_abs_max__m128d_a perAlignment
+{-# INLINE absMaxForeignArray #-}
+
+maximumForeignArray :: Index ix => Double -> ForeignArray ix Double -> IO Double
+maximumForeignArray e0 = foldWithAlignedForeignArray c_maximum__m128d_a max e0 perAlignment
 {-# INLINE maximumForeignArray #-}
 
-minimumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
-minimumForeignArray = foldNonEmptyWithAlignedForeignArray c_minimum__m128d_a min perAlignment
+minimumForeignArray :: Index ix => Double -> ForeignArray ix Double -> IO Double
+minimumForeignArray e0 = foldWithAlignedForeignArray c_minimum__m128d_a min e0 perAlignment
 {-# INLINE minimumForeignArray #-}
 
 copyForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO ()
@@ -273,6 +277,9 @@ foreign import ccall unsafe "m128d.c massiv_even_power_sum__m128d_a"
 
 foreign import ccall unsafe "m128d.c massiv_abs_power_sum__m128d_a"
   c_abs_power_sum__m128d_a :: CLong -> CDouble -> Ptr CDouble -> CLong -> IO CDouble
+
+foreign import ccall unsafe "m128d.c massiv_abs_max__m128d_a"
+  c_abs_max__m128d_a :: CDouble -> Ptr CDouble -> CLong -> IO CDouble
 
 
 foreign import ccall unsafe "m128d.c massiv_maximum__m128d_a"

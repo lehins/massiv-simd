@@ -9,7 +9,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.Massiv.Array.SIMD.DoubleSpec where
 
-import Data.Int
 import Data.Massiv.Array as A
 import Data.Massiv.Array.SIMD
 import Data.Massiv.Core.Operations
@@ -91,6 +90,9 @@ spec = do
       property $ \(arr :: Array F Ix1 Double) (Positive pow) ->
         even pow ==>
         epsilonEq epsilon (evenPowerSumArrayS arr pow) (absPowerSumArrayS arr pow)
+    it "absMax" $
+      property $ \(arr :: Array D Ix1 Double) ->
+        epsilonEq epsilon (absMaxArrayS arr) (absMaxArrayS (computeAs F arr))
     it "normL1" $
       property $ \(arr :: Array F Ix1 Double) ->
         epsilonEq epsilon (normL1 (delay arr)) (normL1 arr)
@@ -103,19 +105,24 @@ spec = do
     it "normL4" $
       property $ \(arr :: Array F Ix1 Double) ->
         epsilonEq epsilon (normL4 (delay arr)) (normL4 arr)
-    it "normLn" $
+    it "normLpi" $
       property $ \(arr :: Array F Ix1 Double) -> monadicIO $ run $ do
-        n1 <- normLn 1 arr
-        n2 <- normLn 2 arr
-        n3 <- normLn 3 arr
-        n4 <- normLn 4 arr
+        n1 <- normLpi 1 arr
+        n2 <- normLpi 2 arr
+        n3 <- normLpi 3 arr
+        n4 <- normLpi 4 arr
         pure (counterexample "normL1" (epsilonEq epsilon (normL1 arr) n1) .&&.
               counterexample "normL2" (epsilonEq epsilon (normL2 arr) n2) .&&.
               counterexample "normL3" (epsilonEq epsilon (normL3 arr) n3) .&&.
               counterexample "normL4" (epsilonEq epsilon (normL4 arr) n4))
-    -- it "maximum" $
-    --   property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
-    --     epsilonEq epsilon (A.maximum' arr) (maximumDouble (Proxy :: Proxy V) (computeAs F arr))
+    it "maximum" $
+      property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
+        monadicIO $ run
+        (epsilonEq epsilon <$> maximumM' arr <*> maximumM' (computeAs F arr))
+    it "minimum" $
+      property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
+        monadicIO $ run
+        (epsilonEq epsilon <$> minimumM' arr <*> minimumM' (computeAs F arr))
     -- it "eq" $
     --   property $ \(arr :: Array D Ix1 Double) ->
     --     eqDouble (computeAs F arr) (computeAs F arr)
@@ -220,35 +227,15 @@ epsilonArraysEq epsilon arr1 arr2 =
   foldlS (.&&.) (property True) (A.zipWith (epsilonEq epsilon) arr1 arr2)
 
 
-epsilonEq :: (Show a, RealFloat a) =>
-             a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
-          -> a -- ^ Expected result.
-          -> a -- ^ Tested value.
-          -> Property
+epsilonEq ::
+     (Show a, RealFloat a)
+  => a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
+  -> a -- ^ Expected result.
+  -> a -- ^ Tested value.
+  -> Property
 epsilonEq epsilon x y =
   x === y .||. counterexample (show diff ++ " > " ++ show n) (diff <= n) .||. (isNaN x && isNaN y)
   where
     (absx, absy) = (abs x, abs y)
     n = epsilon * (1 + max absx absy)
     diff = abs (y - x)
-
--- epsilonEq :: (Show a, Num a, Ord a) =>
---              a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
---           -> a -- ^ Expected result.
---           -> a -- ^ Tested value.
---           -> Property
--- epsilonEq epsilon x y = x === y .||. counterexample (show diff ++ " > " ++ show n) (diff <= n)
---   where (absx, absy) = (abs x, abs y)
---         n = epsilon * (1 + max absx absy)
---         diff = abs (y - x)
-
-
-
--- epsilonEq :: (Num a, Ord a) =>
---              a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
---           -> a -- ^ Expected result.
---           -> a -- ^ Tested value.
---           -> Bool
--- epsilonEq epsilon x y = x == y || abs (y - x) <= n * epsilon
---   where (absx, absy) = (abs x, abs y)
---         n = 1 + if absx < absy then absy else absx

@@ -295,6 +295,19 @@ double massiv_abs_power_sum__m128d_a(const long n, const double init, const doub
   return _mm_cvtsd_f64(acc) + massiv__mm_cvtsd_f64u(acc);
 }
 
+/**
+ * Compute the maximum of absolute values in the vector.
+ */
+double massiv_abs_max__m128d_a(const double init, const double vec[], const long len) {
+  __m128d acc = _mm_set_sd(init);
+  const __m128d mask = _mm_castsi128_pd (_mm_set1_epi64x (0x7FFFFFFFFFFFFFFF));
+  for (long i = 0; i < len; i += 2) {
+    __m128d vi = _mm_and_pd(mask, _mm_load_pd(&vec[i]));
+    acc = _mm_max_pd(acc, vi);
+  }
+  return max_double(_mm_cvtsd_f64(acc), massiv__mm_cvtsd_f64u(acc));
+}
+
 
 
 /**

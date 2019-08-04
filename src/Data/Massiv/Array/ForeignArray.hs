@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 -- |
@@ -27,7 +26,7 @@ module Data.Massiv.Array.ForeignArray
   , eqWithAlignedForeignArray
   , foldWithAlignedForeignArray
   , fold2WithAlignedForeignArray
-  , foldNonEmptyWithAlignedForeignArray
+  -- , foldNonEmptyWithAlignedForeignArray
   -- ** Lifting
   , liftForeignArray
   , zipWithForeignArray
@@ -36,6 +35,7 @@ module Data.Massiv.Array.ForeignArray
   -- ** Numeric
   , evenPowerSumAlignedForeignArray
   , absPowerSumAlignedForeignArray
+  , absMaxAlignedForeignArray
   , multiplySumAlignedForeignArray
   ) where
 
@@ -322,18 +322,18 @@ fold2WithAlignedForeignArray foldAligned foldUnaligned =
 {-# INLINE fold2WithAlignedForeignArray #-}
 
 
-foldNonEmptyWithAlignedForeignArray ::
-     (Storable a, Coercible a b, Coercible e a, Index ix)
-  => (e -> Ptr b -> CLong -> IO e)
-  -> (a -> a -> a)
-  -> Int -- ^ Alignment. In number of elements, rather than bytes.
-  -> ForeignArray ix a
-  -> IO a
-foldNonEmptyWithAlignedForeignArray foldAligned foldUnaligned perAlignment arr = do
-  e0 <- readForeignArray arr 0
-  let arrNo0 = extractForeignArray 1 (lengthForeignArray arr - 1) arr
-  foldWithAlignedForeignArray foldAligned foldUnaligned e0 perAlignment arrNo0
-{-# INLINE foldNonEmptyWithAlignedForeignArray #-}
+-- foldNonEmptyWithAlignedForeignArray ::
+--      (Storable a, Coercible a b, Coercible e a, Index ix)
+--   => (e -> Ptr b -> CLong -> IO e)
+--   -> (a -> a -> a)
+--   -> Int -- ^ Alignment. In number of elements, rather than bytes.
+--   -> ForeignArray ix a
+--   -> IO a
+-- foldNonEmptyWithAlignedForeignArray foldAligned foldUnaligned perAlignment arr = do
+--   e0 <- readForeignArray arr 0
+--   let arrNo0 = extractForeignArray 1 (lengthForeignArray arr - 1) arr
+--   foldWithAlignedForeignArray foldAligned foldUnaligned e0 perAlignment arrNo0
+-- {-# INLINE foldNonEmptyWithAlignedForeignArray #-}
 
 
 eqWithAlignedForeignArray ::
@@ -384,7 +384,7 @@ evenPowerSumAlignedForeignArray ::
   => (CLong -> e -> Ptr e -> CLong -> IO e)
   -> Int -- ^ Alignement. In number of elements, rather than bytes.
   -> ForeignArray ix c
-  -> Int -- ^ Power
+  -> Int -- ^ Even Po Power
   -> IO c
 evenPowerSumAlignedForeignArray action perAlignment arr pow =
   foldWithAlignedForeignArray (action (fromIntegral pow)) (powerSum pow) 0 perAlignment arr
@@ -395,7 +395,7 @@ absPowerSumAlignedForeignArray ::
   => (CLong -> e -> Ptr e -> CLong -> IO e)
   -> Int -- ^ Alignement. In number of elements, rather than bytes.
   -> ForeignArray ix c
-  -> Int -- ^ AbsPower
+  -> Int -- ^ Positive Power
   -> IO c
 absPowerSumAlignedForeignArray action perAlignment arr pow =
   foldWithAlignedForeignArray
@@ -405,6 +405,15 @@ absPowerSumAlignedForeignArray action perAlignment arr pow =
     perAlignment
     arr
 {-# INLINE absPowerSumAlignedForeignArray #-}
+
+absMaxAlignedForeignArray ::
+     (Storable c, Index ix, Ord c, Num c, Coercible e c)
+  => (e -> Ptr e -> CLong -> IO e)
+  -> Int -- ^ Alignement. In number of elements, rather than bytes.
+  -> ForeignArray ix c
+  -> IO c
+absMaxAlignedForeignArray action = foldWithAlignedForeignArray action (\acc -> max acc . abs) 0
+{-# INLINE absMaxAlignedForeignArray #-}
 
 powerSum :: (Integral b, Num a) => b -> a -> a -> a
 powerSum pow acc x = acc + x ^ pow

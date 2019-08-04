@@ -60,11 +60,11 @@ eqDouble (FArray _ arr1) (FArray _ arr2) = SIMD.eqForeignArray arr1 arr2
 --   {-# INLINE compare #-}
 
 instance (Index ix, Mutable F ix e) => Construct F ix e where
-  setComp comp arr = arr { vComp = comp }
-  {-# INLINE setComp #-}
-
   makeArrayLinear !comp !sz f = unsafePerformIO $ generateArrayLinear comp sz (pure . f)
   {-# INLINE makeArrayLinear #-}
+
+  makeConstantArray sz e = runST $ unsafeFreeze Seq =<< initializeNew (Just e) sz
+  {-# INLINE makeConstantArray #-}
 
 
 instance Index ix => Resize F ix where
@@ -80,6 +80,9 @@ instance (Storable e, Index ix) => Load F ix e where
 
   getComp = vComp
   {-# INLINE getComp #-}
+
+  setComp comp arr = arr { vComp = comp }
+  {-# INLINE setComp #-}
 
   size = foreignArraySize . vArray
   {-# INLINE size #-}
@@ -243,6 +246,8 @@ instance ReduceNumArray F Double where
   {-# INLINE evenPowerSumArrayS #-}
   absPowerSumArrayS (FArray _ arr) = unsafeInlineIO . SIMD.absPowerSumForeignArray arr
   {-# INLINE absPowerSumArrayS #-}
+  absMaxArrayS (FArray _ arr) = unsafeInlineIO $ SIMD.absMaxForeignArray arr
+  {-# INLINE absMaxArrayS #-}
   multiplySumArrayS (FArray _ arr1) (FArray _ arr2) =
     unsafeInlineIO $ SIMD.multiplySumForeignArray arr1 arr2
   {-# INLINE multiplySumArrayS #-}
@@ -265,14 +270,12 @@ instance NumArray F Double where
   {-# INLINE subtractionPointwise #-}
   multiplicationPointwise = unsafeSplitApply2 SIMD.multiplicationForeignArray
   {-# INLINE multiplicationPointwise #-}
-  liftArray f a = makeArrayLinear (vComp a) (size a) (f . unsafeLinearIndex a)
-  {-# INLINE liftArray #-}
-  unsafeLiftArray2 f a1 a2 =
+  liftNumArray f a = makeArrayLinear (vComp a) (size a) (f . unsafeLinearIndex a)
+  {-# INLINE liftNumArray #-}
+  unsafeLiftNumArray2 f a1 a2 =
     makeArrayLinear (vComp a1 <> vComp a2) (size a1) $ \ !i ->
       f (unsafeLinearIndex a1 i) (unsafeLinearIndex a2 i)
-  {-# INLINE unsafeLiftArray2 #-}
-  broadcastArray sz e = runST $ unsafeFreeze Seq =<< initializeNew (Just e) sz
-  {-# INLINE broadcastArray #-}
+  {-# INLINE unsafeLiftNumArray2 #-}
 
 instance FloatArray F Double where
   divideScalar arr x = splitApply (`SIMD.divideScalarForeignArray` x) arr
@@ -289,6 +292,13 @@ instance FloatArray F Double where
 instance RoundFloatArray F Double Double where
   roundPointwise = splitApply SIMD.roundForeignArray
   {-# INLINE roundPointwise #-}
+
+instance ReduceOrdArray F Double where
+  maximumArrayS e0 (FArray _ arr) = unsafeInlineIO $ SIMD.maximumForeignArray e0 arr
+  {-# INLINE maximumArrayS #-}
+  minimumArrayS e0 (FArray _ arr) = unsafeInlineIO $ SIMD.minimumForeignArray e0 arr
+  {-# INLINE minimumArrayS #-}
+
 
 castFArray :: Array F ix a -> Array F ix e
 castFArray (FArray c a) = FArray c (castForeignArray a)
