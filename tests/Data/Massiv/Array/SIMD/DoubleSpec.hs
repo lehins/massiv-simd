@@ -132,32 +132,32 @@ spec = do
   describe "Mapping" $ do
     it "plus" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr !+ x) (computeAs F arr !+ x)
+        epsilonArraysEq epsilon (arr !+. x) (computeAs F arr !+. x)
     it "minus scalar" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr !- x) (computeAs F arr !- x)
+        epsilonArraysEq epsilon (arr !-. x) (computeAs F arr !-. x)
     it "minus array" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (x -! arr) (x -! computeAs F arr)
+        epsilonArraysEq epsilon (x .-! arr) (x .-! computeAs F arr)
     it "multiply" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr !* x) (computeAs F arr !* x)
+        epsilonArraysEq epsilon (arr !*. x) (computeAs F arr !*. x)
     it "divide" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr !/ x) (computeAs F arr !/ x)
+        epsilonArraysEq epsilon (arr !/. x) (computeAs F arr !/. x)
     it "multiplyDivide" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (x /! arr) (x /! computeAs F arr)
+        epsilonArraysEq epsilon (x ./! arr) (x ./! computeAs F arr)
     it "abs" $
       property $ \(arr :: Array D Ix1 Double) ->
         arraysEq (abs arr) (abs (computeAs F arr))
     it "power (^)" $
       property $ \(arr :: Array D Ix1 Double) (NonNegative pow) ->
         monadicIO $ run
-          (epsilonArraysEq epsilon <$> (arr !^ pow) <*> (computeAs F arr !^ pow))
+          (epsilonArraysEq epsilon <$> (arr !^. pow) <*> (computeAs F arr !^. pow))
     it "power (^^)" $
       property $ \(arr :: Array D Ix1 Double) pow ->
-        epsilonArraysEq epsilon (arr !^^ pow) (computeAs F arr !^^ pow)
+        epsilonArraysEq epsilon (arr !^^. pow) (computeAs F arr !^^. pow)
     it "sqrt" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonArraysEq epsilon (sqrt arr) (sqrt (computeAs F arr))
