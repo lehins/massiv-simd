@@ -34,13 +34,18 @@ import Numeric
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
 
+linearSize :: Load r ix e => Array r ix e -> Sz1
+linearSize = SafeSz . totalElem . size
+
+totalSize :: Index ix => Sz ix -> Sz1
+totalSize = SafeSz . totalElem
 
 instance (Ragged L ix e, Show e, Mutable F ix e) => Show (Array F ix e) where
   showsPrec = showsArrayPrec id
   showList = showArrayList
 
 instance NFData ix => NFData (Array F ix e) where
-  rnf (FArray comp arr) = comp `deepseq` rnf arr
+  rnf (FArray comp sz arr) = comp `deepseq` sz `deepseq` rnf arr
   {-# INLINE rnf #-}
 
 instance Index ix => Eq (Array F ix Double) where
@@ -51,7 +56,7 @@ instance Index ix => Eq (Array F ix Double) where
   {-# INLINE (==) #-}
 
 eqDouble :: Index ix => Array F ix Double -> Array F ix Double -> IO Bool
-eqDouble (FArray _ arr1) (FArray _ arr2) = SIMD.eqForeignArray arr1 arr2
+eqDouble (FArray _ sz1 arr1) (FArray _ _ arr2) = SIMD.eqForeignArray (totalSize sz1) arr1 arr2
 {-# INLINE eqDouble #-}
 
 
@@ -68,11 +73,11 @@ instance (Index ix, Mutable F ix e) => Construct F ix e where
 
 
 instance Index ix => Resize F ix where
-  unsafeResize !sz !arr = arr {vArray = (vArray arr) {foreignArraySize = sz}}
+  unsafeResize !sz !arr = arr {vSize = sz}
   {-# INLINE unsafeResize #-}
 
 instance (Load F Ix1 e, A.Storable e) => Extract F Ix1 e where
-  unsafeExtract !sIx !newSz (FArray comp arr) = FArray comp (extractForeignArray sIx newSz arr)
+  unsafeExtract !sIx !newSz (FArray comp _ arr) = FArray comp newSz (extractForeignArray sIx arr)
   {-# INLINE unsafeExtract #-}
 
 
@@ -84,7 +89,7 @@ instance (Storable e, Index ix) => Load F ix e where
   setComp comp arr = arr { vComp = comp }
   {-# INLINE setComp #-}
 
-  size = foreignArraySize . vArray
+  size = vSize
   {-# INLINE size #-}
 
   loadArrayM !scheduler !arr =
@@ -92,14 +97,14 @@ instance (Storable e, Index ix) => Load F ix e where
   {-# INLINE loadArrayM #-}
 
 instance (Storable e, Load F ix e) => Source F ix e where
-  unsafeLinearIndex (FArray _ arr) = unsafeInlineIO . readForeignArray arr
+  unsafeLinearIndex (FArray _ sz arr) = unsafeInlineIO . readForeignArray (totalSize sz) arr
   {-# INLINE unsafeLinearIndex #-}
-  unsafeLinearSlice ix sz (FArray comp arr) = FArray comp $ extractForeignArray ix sz arr
+  unsafeLinearSlice ix sz (FArray comp _ arr) = FArray comp sz $ extractForeignArray ix arr
   {-# INLINE unsafeLinearSlice #-}
 
 
 instance (Storable e, Load F ix e) => Manifest F ix e where
-  unsafeLinearIndexM (FArray _ arr) = unsafeInlineIO . readForeignArray arr
+  unsafeLinearIndexM (FArray _ sz arr) = unsafeInlineIO . readForeignArray (totalSize sz) arr
   {-# INLINE unsafeLinearIndexM #-}
 
 
@@ -114,87 +119,90 @@ instance ( Index ix
          , Load F ix e
          ) =>
          OuterSlice F ix e where
-  unsafeOuterSlice (FArray comp arr) = FArray comp . sliceForeignArray arr
+  unsafeOuterSlice (FArray comp sz arr) i =
+    FArray comp (snd (unconsSz sz)) $ extractForeignArray offset arr
+    where !offset = toLinearIndex sz (consDim i (zeroIndex :: Lower ix))
   {-# INLINE unsafeOuterSlice #-}
 
-instance Index ix => Mutable F ix Int64 where
-  newtype MArray s F ix Int64 = MArrayI64 (ForeignArray ix Int64)
-  msize (MArrayI64 arr) = foreignArraySize arr
-  {-# INLINE msize #-}
-  unsafeThaw (FArray _ arr) = pure (MArrayI64 arr)
-  {-# INLINE unsafeThaw #-}
-  unsafeFreeze comp (MArrayI64 arr) = pure $ FArray comp arr
-  {-# INLINE unsafeFreeze #-}
-  unsafeNew sz = unsafePrimToPrim (MArrayI64 <$> mallocForeignArray sz)
-  {-# INLINE unsafeNew #-}
-  -- initialize (MArrayI64 arr) = unsafePrimToPrim $ SIMD.fillForeignArray 0 arr
-  -- {-# INLINE initialize #-}
-  unsafeLinearRead (MArrayI64 arr) = unsafePrimToPrim . readForeignArray arr
-  {-# INLINE unsafeLinearRead #-}
-  unsafeLinearWrite (MArrayI64 arr) i = unsafePrimToPrim . writeForeignArray arr i
-  {-# INLINE unsafeLinearWrite #-}
+-- instance Index ix => Mutable F ix Int64 where
+--   newtype MArray s F ix Int64 = MArrayI64 (ForeignArray ix Int64)
+--   msize (MArrayI64 arr) = foreignArraySize arr
+--   {-# INLINE msize #-}
+--   unsafeThaw (FArray _ arr) = pure (MArrayI64 arr)
+--   {-# INLINE unsafeThaw #-}
+--   unsafeFreeze comp (MArrayI64 arr) = pure $ FArray comp arr
+--   {-# INLINE unsafeFreeze #-}
+--   unsafeNew sz = unsafePrimToPrim (MArrayI64 <$> mallocForeignArray sz)
+--   {-# INLINE unsafeNew #-}
+--   -- initialize (MArrayI64 arr) = unsafePrimToPrim $ SIMD.fillForeignArray 0 arr
+--   -- {-# INLINE initialize #-}
+--   unsafeLinearRead (MArrayI64 arr) = unsafePrimToPrim . readForeignArray arr
+--   {-# INLINE unsafeLinearRead #-}
+--   unsafeLinearWrite (MArrayI64 arr) i = unsafePrimToPrim . writeForeignArray arr i
+--   {-# INLINE unsafeLinearWrite #-}
 
 
 instance Index ix => Mutable F ix Double where
-  newtype MArray s F ix Double = MArrayD (ForeignArray ix Double)
-  msize (MArrayD arr) = foreignArraySize arr
+  data MArray s F ix Double = MArrayD !(Sz ix) (ForeignArray Double)
+  msize (MArrayD sz arr) = sz
   {-# INLINE msize #-}
-  unsafeThaw (FArray _ arr) = pure (MArrayD arr)
+  unsafeThaw (FArray _ sz arr) = pure (MArrayD sz arr)
   {-# INLINE unsafeThaw #-}
-  unsafeFreeze comp (MArrayD arr) = pure $ FArray comp arr
+  unsafeFreeze comp (MArrayD sz arr) = pure $ FArray comp sz arr
   {-# INLINE unsafeFreeze #-}
-  unsafeNew sz = unsafePrimToPrim (MArrayD <$> newForeignArray sz)
+  unsafeNew sz = unsafePrimToPrim (MArrayD sz <$> newForeignArray (totalSize sz))
   {-# INLINE unsafeNew #-}
-  initialize (MArrayD arr) = unsafePrimToPrim $ fillForeignArray arr 0
+  initialize (MArrayD sz arr) = unsafePrimToPrim $ fillForeignArray (totalSize sz) arr 0
   {-# INLINE initialize #-}
   initializeNew mdef sz =
     case mdef of
       Just val -> do
-        marr@(MArrayD farr) <- unsafeNew sz
-        unsafePrimToPrim $ SIMD.fillForeignArray farr val
+        marr@(MArrayD _ farr) <- unsafeNew sz
+        unsafePrimToPrim $ SIMD.fillForeignArray (totalSize sz) farr val
         return marr
       Nothing -> do
-        marr@(MArrayD farr) <- unsafeNew sz
-        unsafePrimToPrim $ fillForeignArray farr 0
+        marr@(MArrayD _ farr) <- unsafeNew sz
+        unsafePrimToPrim $ fillForeignArray (totalSize sz) farr 0
         return marr
   {-# INLINE initializeNew #-}
-  unsafeLinearRead (MArrayD arr) = unsafePrimToPrim . readForeignArray arr
+  unsafeLinearRead (MArrayD sz arr) = unsafePrimToPrim . readForeignArray (totalSize sz) arr
   {-# INLINE unsafeLinearRead #-}
-  unsafeLinearWrite (MArrayD arr) i = unsafePrimToPrim . writeForeignArray arr i
+  unsafeLinearWrite (MArrayD sz arr) i = unsafePrimToPrim . writeForeignArray (totalSize sz) arr i
   {-# INLINE unsafeLinearWrite #-}
-  unsafeLinearSet (MArrayD arr) offset len val =
-    unsafePrimToPrim $ SIMD.fillForeignArray (extractForeignArray offset len arr) val
+  unsafeLinearSet (MArrayD _ arr) offset len val =
+    unsafePrimToPrim $ SIMD.fillForeignArray len (extractForeignArray offset arr) val
   {-# INLINE unsafeLinearSet #-}
-  unsafeLinearCopy (MArrayD arrSrc) iFrom (MArrayD arrDst) iTo k =
+  unsafeLinearCopy (MArrayD _ arrSrc) iFrom (MArrayD _ arrDst) iTo k =
     unsafePrimToPrim $
-    copyForeignArray (extractForeignArray iFrom k arrSrc) (extractForeignArray iTo k arrDst)
+    copyForeignArray k (extractForeignArray iFrom arrSrc) (extractForeignArray iTo arrDst)
   {-# INLINE unsafeLinearCopy #-}
   unsafeArrayLinearCopy arrFrom iFrom marrTo iTo sz = do
     marrFrom <- unsafeThaw arrFrom
     unsafeLinearCopy marrFrom iFrom marrTo iTo sz
   {-# INLINE unsafeArrayLinearCopy #-}
-  unsafeLinearShrink (MArrayD arr) = fmap MArrayD . unsafePrimToPrim . reallocForeignArray arr
+  unsafeLinearShrink (MArrayD oldsz arr) newsz =
+    MArrayD newsz <$> unsafePrimToPrim (reallocForeignArray (totalSize oldsz) arr (totalSize newsz))
   {-# INLINE unsafeLinearShrink #-}
-  unsafeLinearGrow (MArrayD arr) = fmap MArrayD . unsafePrimToPrim . reallocForeignArray arr
+  unsafeLinearGrow (MArrayD oldsz arr) newsz =
+    MArrayD newsz <$> unsafePrimToPrim (reallocForeignArray (totalSize oldsz) arr (totalSize newsz))
   {-# INLINE unsafeLinearGrow #-}
 
 
 splitApply ::
      (Mutable F ix e1, Storable e1, Storable e2)
-  => (ForeignArray Ix1 e2 -> ForeignArray Ix1 e1 -> IO ())
+  => (Sz1 -> ForeignArray e2 -> ForeignArray e1 -> IO ())
   -> Array F ix e2
   -> Array F ix e1
-splitApply f (FArray comp arr) =
+splitApply f (FArray comp sz arr) =
   unsafePerformIO $ do
-    let !sz = foreignArraySize arr
-        !totalLength = totalElem sz
+    let !totalLength = totalElem sz
     marr <- unsafeNew sz
-    FArray _ resArr <- unsafeFreeze Seq marr
+    FArray _ _ resArr <- unsafeFreeze Seq marr
     withScheduler_ comp $ \scheduler -> do
       let schedule chunkStart chunkLength =
-            let chunk = extractForeignArray chunkStart chunkLength arr
-                resChunk = extractForeignArray chunkStart chunkLength resArr
-             in scheduleWork_ scheduler $ f chunk resChunk
+            let chunk = extractForeignArray chunkStart arr
+                resChunk = extractForeignArray chunkStart resArr
+             in scheduleWork_ scheduler $ f chunkLength chunk resChunk
           {-# INLINE schedule #-}
       splitLinearly (numWorkers scheduler) totalLength $ \chunkLength slackStart -> do
         loopM_ 0 (< slackStart) (+ chunkLength) (`schedule` SafeSz chunkLength)
@@ -205,23 +213,22 @@ splitApply f (FArray comp arr) =
 
 unsafeSplitApply2 ::
      (Mutable F ix e1, Storable e1, Storable e2, Storable e3)
-  => (ForeignArray Ix1 e3 -> ForeignArray Ix1 e2 -> ForeignArray Ix1 e1 -> IO ())
+  => (Sz1 -> ForeignArray e3 -> ForeignArray e2 -> ForeignArray e1 -> IO ())
   -> Array F ix e3
   -> Array F ix e2
   -> Array F ix e1
-unsafeSplitApply2 f (FArray comp1 arr1) (FArray comp2 arr2) =
+unsafeSplitApply2 f (FArray comp1 sz arr1) (FArray comp2 _ arr2) =
   unsafePerformIO $ do
-    let !sz = foreignArraySize arr1
-        !comp = comp1 <> comp2
+    let !comp = comp1 <> comp2
         !totalLength = totalElem sz
     marr <- unsafeNew sz
-    FArray _ resArr <- unsafeFreeze Seq marr
+    FArray _ _ resArr <- unsafeFreeze Seq marr
     withScheduler_ comp $ \scheduler -> do
       let schedule chunkStart chunkLength =
-            let chunk1 = extractForeignArray chunkStart chunkLength arr1
-                chunk2 = extractForeignArray chunkStart chunkLength arr2
-                resChunk = extractForeignArray chunkStart chunkLength resArr
-             in scheduleWork_ scheduler $ f chunk1 chunk2 resChunk
+            let chunk1 = extractForeignArray chunkStart arr1
+                chunk2 = extractForeignArray chunkStart arr2
+                resChunk = extractForeignArray chunkStart resArr
+             in scheduleWork_ scheduler $ f chunkLength chunk1 chunk2 resChunk
           {-# INLINE schedule #-}
       splitLinearly (numWorkers scheduler) totalLength $ \chunkLength slackStart -> do
         loopM_ 0 (< slackStart) (+ chunkLength) (`schedule` SafeSz chunkLength)
@@ -238,31 +245,33 @@ applySameSizeArray2 f a1 a2
 
 
 instance ReduceNumArray F Double where
-  sumArrayS (FArray _ arr) = unsafeInlineIO $ SIMD.sumForeignArray arr
+  sumArrayS (FArray _ sz arr) = unsafeInlineIO $ SIMD.sumForeignArray (totalSize sz) arr
   {-# INLINE sumArrayS #-}
-  productArrayS (FArray _ arr) = unsafeInlineIO $ SIMD.productForeignArray arr
+  productArrayS (FArray _ sz arr) = unsafeInlineIO $ SIMD.productForeignArray (totalSize sz) arr
   {-# INLINE productArrayS #-}
-  evenPowerSumArrayS (FArray _ arr) = unsafeInlineIO . SIMD.evenPowerSumForeignArray arr
+  evenPowerSumArrayS (FArray _ sz arr) =
+    unsafeInlineIO . SIMD.evenPowerSumForeignArray (totalSize sz) arr
   {-# INLINE evenPowerSumArrayS #-}
-  absPowerSumArrayS (FArray _ arr) = unsafeInlineIO . SIMD.absPowerSumForeignArray arr
+  absPowerSumArrayS (FArray _ sz arr) =
+    unsafeInlineIO . SIMD.absPowerSumForeignArray (totalSize sz) arr
   {-# INLINE absPowerSumArrayS #-}
-  absMaxArrayS (FArray _ arr) = unsafeInlineIO $ SIMD.absMaxForeignArray arr
+  absMaxArrayS (FArray _ sz arr) = unsafeInlineIO $ SIMD.absMaxForeignArray (totalSize sz) arr
   {-# INLINE absMaxArrayS #-}
-  multiplySumArrayS (FArray _ arr1) (FArray _ arr2) =
-    unsafeInlineIO $ SIMD.multiplySumForeignArray arr1 arr2
+  multiplySumArrayS (FArray _ sz1 arr1) (FArray _ _ arr2) =
+    unsafeInlineIO $ SIMD.multiplySumForeignArray (totalSize sz1) arr1 arr2
   {-# INLINE multiplySumArrayS #-}
 
 
 instance NumArray F Double where
-  plusScalar arr x = splitApply (`SIMD.plusScalarForeignArray` x) arr
+  plusScalar arr x = splitApply (SIMD.plusScalarForeignArray x) arr
   {-# INLINE plusScalar #-}
-  minusScalar arr x = splitApply (`SIMD.minusScalarForeignArray` x) arr
+  minusScalar arr x = splitApply (SIMD.minusScalarForeignArray x) arr
   {-# INLINE minusScalar #-}
-  negatePlusScalar arr x = splitApply (`SIMD.negatePlusScalarForeignArray` x) arr
+  negatePlusScalar arr x = splitApply (SIMD.negatePlusScalarForeignArray x) arr
   {-# INLINE negatePlusScalar #-}
-  multiplyScalar arr x = splitApply (`SIMD.multiplyScalarForeignArray` x) arr
+  multiplyScalar arr x = splitApply (SIMD.multiplyScalarForeignArray x) arr
   {-# INLINE multiplyScalar #-}
-  powerScalar arr p = splitApply (`SIMD.powerScalarForeignArray` p) arr
+  powerScalar arr p = splitApply (SIMD.powerScalarForeignArray p) arr
   {-# INLINE powerScalar #-}
   absPointwise = splitApply SIMD.absForeignArray
   {-# INLINE absPointwise #-}
@@ -280,11 +289,11 @@ instance NumArray F Double where
   {-# INLINE unsafeLiftNumArray2 #-}
 
 instance FloatArray F Double where
-  divideScalar arr x = splitApply (`SIMD.divideScalarForeignArray` x) arr
+  divideScalar arr x = splitApply (SIMD.divideScalarForeignArray x) arr
   {-# INLINE divideScalar #-}
-  recipMultiplyScalar arr x = splitApply (`SIMD.recipMultiplyForeignArray` x) arr
+  recipMultiplyScalar arr x = splitApply (SIMD.recipMultiplyForeignArray x) arr
   {-# INLINE recipMultiplyScalar #-}
-  recipPowerScalar arr p = splitApply (`SIMD.recipPowerScalarForeignArray` p) arr
+  recipPowerScalar arr p = splitApply (SIMD.recipPowerScalarForeignArray p) arr
   {-# INLINE recipPowerScalar #-}
   divisionPointwise = unsafeSplitApply2 SIMD.divisionForeignArray
   {-# INLINE divisionPointwise #-}
@@ -296,14 +305,16 @@ instance RoundFloatArray F Double Double where
   {-# INLINE roundPointwise #-}
 
 instance ReduceOrdArray F Double where
-  maximumArrayS e0 (FArray _ arr) = unsafeInlineIO $ SIMD.maximumForeignArray e0 arr
+  maximumArrayS e0 (FArray _ sz arr) =
+    unsafeInlineIO $ SIMD.maximumForeignArray e0 (totalSize sz) arr
   {-# INLINE maximumArrayS #-}
-  minimumArrayS e0 (FArray _ arr) = unsafeInlineIO $ SIMD.minimumForeignArray e0 arr
+  minimumArrayS e0 (FArray _ sz arr) =
+    unsafeInlineIO $ SIMD.minimumForeignArray e0 (totalSize sz) arr
   {-# INLINE minimumArrayS #-}
 
 
 castFArray :: Array F ix a -> Array F ix e
-castFArray (FArray c a) = FArray c (castForeignArray a)
+castFArray (FArray c sz a) = FArray c sz (castForeignArray a)
 
 instance (NumArray F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
   (+) = applySameSizeArray2 additionPointwise

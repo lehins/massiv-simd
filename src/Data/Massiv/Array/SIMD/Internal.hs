@@ -30,7 +30,8 @@ data F = F deriving Show
 
 data instance Array F ix e = FArray
   { vComp  :: !Comp
-  , vArray :: !(ForeignArray ix e)
+  , vSize  :: !(Sz ix)
+  , vArray :: !(ForeignArray e)
   }
 
 -- | Access the pointer to the first element of the array. It is unsafe to mutate the
@@ -39,7 +40,7 @@ data instance Array F ix e = FArray
 --
 -- @since 0.1.0
 unsafeWithFArrayPtr :: Array F ix e -> (Ptr e -> IO a) -> IO a
-unsafeWithFArrayPtr (FArray _ arr) = withForeignArray arr
+unsafeWithFArrayPtr (FArray _ _ arr) = withForeignArray arr
 {-# INLINE unsafeWithFArrayPtr #-}
 
 -- A bit of unituitive trickery:

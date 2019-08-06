@@ -21,155 +21,86 @@ perAlignment :: Int
 perAlignment = 2
 
 
-multiplySumForeignArray ::
-     Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Double
+multiplySumForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Double -> IO Double
 multiplySumForeignArray = multiplySumAlignedForeignArray c_dot_product__m128d_a perAlignment
 {-# INLINE multiplySumForeignArray #-}
 
 
-eqForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO Bool
+eqForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Double -> IO Bool
 eqForeignArray = eqWithAlignedForeignArray c_eq__m128d_a perAlignment
 {-# INLINE eqForeignArray #-}
 
-plusScalarForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> Double
-  -> ForeignArray ix Double
-  -> IO ()
-plusScalarForeignArray arr x =
-  liftAlignedForeignArray (`c_plus__m128d_a` coerce x) (+ x) perAlignment arr
+plusScalarForeignArray :: Double -> Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+plusScalarForeignArray x = liftAlignedForeignArray (`c_plus__m128d_a` coerce x) (+ x) perAlignment
 {-# INLINE plusScalarForeignArray #-}
 
-minusScalarForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> Double
-  -> ForeignArray ix Double
-  -> IO ()
-minusScalarForeignArray arr x =
-  liftAlignedForeignArray (`c_minus__m128d_a` coerce x) (subtract x) perAlignment arr
+minusScalarForeignArray :: Double -> Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+minusScalarForeignArray x =
+  liftAlignedForeignArray (`c_minus__m128d_a` coerce x) (subtract x) perAlignment
 {-# INLINE minusScalarForeignArray #-}
 
 negatePlusScalarForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> Double
-  -> ForeignArray ix Double
-  -> IO ()
-negatePlusScalarForeignArray arr x =
-  liftAlignedForeignArray (`c_negate_plus__m128d_a` coerce x) (x -) perAlignment arr
+     Double -> Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+negatePlusScalarForeignArray x =
+  liftAlignedForeignArray (`c_negate_plus__m128d_a` coerce x) (x -) perAlignment
 {-# INLINE negatePlusScalarForeignArray #-}
 
 
-multiplyScalarForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> Double
-  -> ForeignArray ix Double
-  -> IO ()
-multiplyScalarForeignArray arr x =
-  liftAlignedForeignArray (`c_multiply__m128d_a` coerce x) (* x) perAlignment arr
+multiplyScalarForeignArray :: Double -> Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+multiplyScalarForeignArray x =
+  liftAlignedForeignArray (`c_multiply__m128d_a` coerce x) (* x) perAlignment
 {-# INLINE multiplyScalarForeignArray #-}
 
-powerScalarForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> Int
-  -> ForeignArray ix Double
-  -> IO ()
-powerScalarForeignArray arr x =
-  liftAlignedForeignArray (`c_power__m128d_a` fromIntegral x) (^ x) perAlignment arr
+powerScalarForeignArray :: Int -> Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+powerScalarForeignArray x =
+  liftAlignedForeignArray (`c_power__m128d_a` fromIntegral x) (^ x) perAlignment
 {-# INLINE powerScalarForeignArray #-}
 
-recipPowerScalarForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> Int
-  -> ForeignArray ix Double
-  -> IO ()
-recipPowerScalarForeignArray arr x =
-  liftAlignedForeignArray (`c_recip_power__m128d_a` fromIntegral x) ((^ x) . recip) perAlignment arr
+recipPowerScalarForeignArray :: Int -> Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+recipPowerScalarForeignArray x =
+  liftAlignedForeignArray (`c_recip_power__m128d_a` fromIntegral x) ((^ x) . recip) perAlignment
 {-# INLINE recipPowerScalarForeignArray #-}
 
-divideScalarForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> Double
-  -> ForeignArray ix Double
-  -> IO ()
-divideScalarForeignArray arr x =
-  liftAlignedForeignArray (`c_divide__m128d_a` coerce x) (/ x) perAlignment arr
+divideScalarForeignArray :: Double -> Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+divideScalarForeignArray x =
+  liftAlignedForeignArray (`c_divide__m128d_a` coerce x) (/ x) perAlignment
 {-# INLINE divideScalarForeignArray #-}
 
-recipMultiplyForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> Double
-  -> ForeignArray ix Double
-  -> IO ()
-recipMultiplyForeignArray arr x =
-  liftAlignedForeignArray (`c_recip_multiply__m128d_a` coerce x) (x /) perAlignment arr
+recipMultiplyForeignArray :: Double -> Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+recipMultiplyForeignArray x =
+  liftAlignedForeignArray (`c_recip_multiply__m128d_a` coerce x) (x /) perAlignment
 {-# INLINE recipMultiplyForeignArray #-}
 
-absForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO ()
+absForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
 absForeignArray = liftAlignedForeignArray c_abs__m128d_a abs perAlignment
 {-# INLINE absForeignArray #-}
 
 additionForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO ()
+     Sz1 -> ForeignArray Double -> ForeignArray Double -> ForeignArray Double -> IO ()
 additionForeignArray = zipWithAlignedForeignArray c_addition__m128d_a (+) perAlignment
 {-# INLINE additionForeignArray #-}
 
 subtractionForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO ()
+     Sz1 -> ForeignArray Double -> ForeignArray Double -> ForeignArray Double -> IO ()
 subtractionForeignArray = zipWithAlignedForeignArray c_subtraction__m128d_a (-) perAlignment
 {-# INLINE subtractionForeignArray #-}
 
 
 multiplicationForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO ()
+     Sz1 -> ForeignArray Double -> ForeignArray Double -> ForeignArray Double -> IO ()
 multiplicationForeignArray = zipWithAlignedForeignArray c_multiplication__m128d_a (*) perAlignment
 {-# INLINE multiplicationForeignArray #-}
 
 divisionForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO ()
+     Sz1 -> ForeignArray Double -> ForeignArray Double -> ForeignArray Double -> IO ()
 divisionForeignArray = zipWithAlignedForeignArray c_division__m128d_a (/) perAlignment
 {-# INLINE divisionForeignArray #-}
 
-sqrtForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO ()
+sqrtForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
 sqrtForeignArray = liftAlignedForeignArray c_sqrt__m128d_a sqrt perAlignment
 {-# INLINE sqrtForeignArray #-}
 
-truncateForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Int64
-  -> IO ()
+truncateForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Int64 -> IO ()
 truncateForeignArray =
   liftAlignedForeignArray
     c_truncate_64i__m128d_a
@@ -177,48 +108,44 @@ truncateForeignArray =
     perAlignment
 {-# INLINE truncateForeignArray #-}
 
-roundForeignArray ::
-     Index ix
-  => ForeignArray ix Double
-  -> ForeignArray ix Double
-  -> IO ()
+roundForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
 roundForeignArray = liftAlignedForeignArray c_round__m128d_a roundDouble perAlignment
 {-# INLINE roundForeignArray #-}
 
 
-sumForeignArray :: Index ix => ForeignArray ix Double -> IO Double
+sumForeignArray :: Sz1 -> ForeignArray Double -> IO Double
 sumForeignArray = foldWithAlignedForeignArray c_sum__m128d_a (+) 0 perAlignment
 {-# INLINE sumForeignArray #-}
 
-productForeignArray :: Index ix => ForeignArray ix Double -> IO Double
+productForeignArray :: Sz1 -> ForeignArray Double -> IO Double
 productForeignArray = foldWithAlignedForeignArray c_product__m128d_a (*) 1 perAlignment
 {-# INLINE productForeignArray #-}
 
-evenPowerSumForeignArray :: Index ix => ForeignArray ix Double -> Int -> IO Double
+evenPowerSumForeignArray :: Sz1 -> ForeignArray Double -> Int -> IO Double
 evenPowerSumForeignArray = evenPowerSumAlignedForeignArray c_even_power_sum__m128d_a perAlignment
 {-# INLINE evenPowerSumForeignArray #-}
 
-absPowerSumForeignArray :: Index ix => ForeignArray ix Double -> Int -> IO Double
+absPowerSumForeignArray :: Sz1 -> ForeignArray Double -> Int -> IO Double
 absPowerSumForeignArray = absPowerSumAlignedForeignArray c_abs_power_sum__m128d_a perAlignment
 {-# INLINE absPowerSumForeignArray #-}
 
-absMaxForeignArray :: Index ix => ForeignArray ix Double -> IO Double
+absMaxForeignArray :: Sz1 -> ForeignArray Double -> IO Double
 absMaxForeignArray = absMaxAlignedForeignArray c_abs_max__m128d_a perAlignment
 {-# INLINE absMaxForeignArray #-}
 
-maximumForeignArray :: Index ix => Double -> ForeignArray ix Double -> IO Double
+maximumForeignArray :: Double -> Sz1 -> ForeignArray Double -> IO Double
 maximumForeignArray e0 = foldWithAlignedForeignArray c_maximum__m128d_a max e0 perAlignment
 {-# INLINE maximumForeignArray #-}
 
-minimumForeignArray :: Index ix => Double -> ForeignArray ix Double -> IO Double
+minimumForeignArray :: Double -> Sz1 -> ForeignArray Double -> IO Double
 minimumForeignArray e0 = foldWithAlignedForeignArray c_minimum__m128d_a min e0 perAlignment
 {-# INLINE minimumForeignArray #-}
 
-copyForeignArray :: Index ix => ForeignArray ix Double -> ForeignArray ix Double -> IO ()
+copyForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
 copyForeignArray = copyWithAlignedForeignArray c_copy__m128d_a perAlignment
 {-# INLINE copyForeignArray #-}
 
-fillForeignArray :: Index ix => ForeignArray ix Double -> Double -> IO ()
+fillForeignArray :: Sz1 -> ForeignArray Double -> Double -> IO ()
 fillForeignArray = fillWithAlignedForeignArray c_fill__m128d_a perAlignment
 {-# INLINE fillForeignArray #-}
 
