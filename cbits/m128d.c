@@ -443,6 +443,7 @@ void massiv_addition__m128d(const double vec1[], const double vec2[], double res
 }
 
 
+// TODO: Final could be _mm_ucomieq_sd
 /**
  * Compare two vectors with doubles. Does not short circuit on first inequality (could be
  * useful for cryptography?)

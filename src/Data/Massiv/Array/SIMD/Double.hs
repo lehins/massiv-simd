@@ -19,9 +19,7 @@ module Data.Massiv.Array.SIMD.Double where
 import Control.DeepSeq
 import Control.Monad (when)
 import Control.Monad.Primitive
-import Control.Monad.ST (runST)
 import Control.Scheduler
-import Data.Int
 import Data.Massiv.Array as A
 import Data.Massiv.Array.ForeignArray
 import qualified Data.Massiv.Array.SIMD.Double.M128d as SIMD
@@ -48,10 +46,11 @@ instance NFData ix => NFData (Array F ix e) where
   rnf (FArray comp sz arr) = comp `deepseq` sz `deepseq` rnf arr
   {-# INLINE rnf #-}
 
-instance Index ix => Eq (Array F ix Double) where
-  (==) a1 a2 =
-    size a1 == size a2 &&
-    unsafePerformIO (splitReduce2 (const eqDouble) (\x y -> pure (x && y)) True a1 a2)
+instance (Storable e, Eq e, Index ix) => Eq (Array F ix e) where
+  (==) = eqArrays (==)
+  -- (==) a1 a2 =
+  --   size a1 == size a2 &&
+  --   unsafePerformIO (splitReduce2 (const eqDouble) (\x y -> pure (x && y)) True a1 a2)
   -- (==) a1 a2 = size a1 == size a2 && A.and (A.zipWith (==) a1 a2)
   {-# INLINE (==) #-}
 
@@ -59,17 +58,19 @@ eqDouble :: Index ix => Array F ix Double -> Array F ix Double -> IO Bool
 eqDouble (FArray _ sz1 arr1) (FArray _ _ arr2) = SIMD.eqForeignArray (totalSize sz1) arr1 arr2
 {-# INLINE eqDouble #-}
 
-
--- instance (VS.Storable e, Ord e, Index ix) => Ord (Array S ix e) where
---   compare = ord compare
---   {-# INLINE compare #-}
+instance (Storable e, Ord e, Index ix) => Ord (Array F ix e) where
+  compare = compareArrays compare
+  {-# INLINE compare #-}
 
 instance (Index ix, Mutable F ix e) => Construct F ix e where
+  setComp comp arr = arr { vComp = comp }
+  {-# INLINE setComp #-}
+
   makeArrayLinear !comp !sz f = unsafePerformIO $ generateArrayLinear comp sz (pure . f)
   {-# INLINE makeArrayLinear #-}
 
-  makeConstantArray sz e = runST $ unsafeFreeze Seq =<< initializeNew (Just e) sz
-  {-# INLINE makeConstantArray #-}
+  -- makeConstantArray sz e = runST $ unsafeFreeze Seq =<< initializeNew (Just e) sz
+  -- {-# INLINE makeConstantArray #-}
 
 
 instance Index ix => Resize F ix where
@@ -85,9 +86,6 @@ instance (Storable e, Index ix) => Load F ix e where
 
   getComp = vComp
   {-# INLINE getComp #-}
-
-  setComp comp arr = arr { vComp = comp }
-  {-# INLINE setComp #-}
 
   size = vSize
   {-# INLINE size #-}
@@ -144,8 +142,10 @@ instance ( Index ix
 
 instance Index ix => Mutable F ix Double where
   data MArray s F ix Double = MArrayD !(Sz ix) (ForeignArray Double)
-  msize (MArrayD sz arr) = sz
+  msize (MArrayD sz _) = sz
   {-# INLINE msize #-}
+  -- unsafeMutableSlice ix sz (MArrayD _ arr) = MArrayD sz $ extractForeignArray ix arr
+  -- {-# INLINE unsafeMutableSlice #-}
   unsafeThaw (FArray _ sz arr) = pure (MArrayD sz arr)
   {-# INLINE unsafeThaw #-}
   unsafeFreeze comp (MArrayD sz arr) = pure $ FArray comp sz arr
@@ -244,35 +244,38 @@ applySameSizeArray2 f a1 a2
 {-# INLINE applySameSizeArray2 #-}
 
 
-instance ReduceNumArray F Double where
-  sumArrayS (FArray _ sz arr) = unsafeInlineIO $ SIMD.sumForeignArray (totalSize sz) arr
-  {-# INLINE sumArrayS #-}
-  productArrayS (FArray _ sz arr) = unsafeInlineIO $ SIMD.productForeignArray (totalSize sz) arr
-  {-# INLINE productArrayS #-}
-  evenPowerSumArrayS (FArray _ sz arr) =
+-- instance ReduceNumArray F Double where
+--   evenPowerSumArrayS (FArray _ sz arr) =
+--     unsafeInlineIO . SIMD.evenPowerSumForeignArray (totalSize sz) arr
+--   {-# INLINE evenPowerSumArrayS #-}
+--   absPowerSumArrayS (FArray _ sz arr) =
+--     unsafeInlineIO . SIMD.absPowerSumForeignArray (totalSize sz) arr
+--   {-# INLINE absPowerSumArrayS #-}
+--   absMaxArrayS (FArray _ sz arr) = unsafeInlineIO $ SIMD.absMaxForeignArray (totalSize sz) arr
+--   {-# INLINE absMaxArrayS #-}
+
+
+instance Numeric F Double where
+  sumArray (FArray _ sz arr) = unsafeInlineIO $ SIMD.sumForeignArray (totalSize sz) arr
+  {-# INLINE sumArray #-}
+  productArray (FArray _ sz arr) = unsafeInlineIO $ SIMD.productForeignArray (totalSize sz) arr
+  {-# INLINE productArray #-}
+  powerSumArray (FArray _ sz arr) =
     unsafeInlineIO . SIMD.evenPowerSumForeignArray (totalSize sz) arr
-  {-# INLINE evenPowerSumArrayS #-}
-  absPowerSumArrayS (FArray _ sz arr) =
-    unsafeInlineIO . SIMD.absPowerSumForeignArray (totalSize sz) arr
-  {-# INLINE absPowerSumArrayS #-}
-  absMaxArrayS (FArray _ sz arr) = unsafeInlineIO $ SIMD.absMaxForeignArray (totalSize sz) arr
-  {-# INLINE absMaxArrayS #-}
-  multiplySumArrayS (FArray _ sz1 arr1) (FArray _ _ arr2) =
+  {-# INLINE powerSumArray #-}
+  unsafeDotProduct (FArray _ sz1 arr1) (FArray _ _ arr2) =
     unsafeInlineIO $ SIMD.multiplySumForeignArray (totalSize sz1) arr1 arr2
-  {-# INLINE multiplySumArrayS #-}
+  {-# INLINE unsafeDotProduct #-}
 
-
-instance NumArray F Double where
   plusScalar arr x = splitApply (SIMD.plusScalarForeignArray x) arr
   {-# INLINE plusScalar #-}
   minusScalar arr x = splitApply (SIMD.minusScalarForeignArray x) arr
   {-# INLINE minusScalar #-}
-  negatePlusScalar arr x = splitApply (SIMD.negatePlusScalarForeignArray x) arr
-  {-# INLINE negatePlusScalar #-}
+  scalarMinus x arr = splitApply (SIMD.negatePlusScalarForeignArray x) arr
+  {-# INLINE scalarMinus #-}
+
   multiplyScalar arr x = splitApply (SIMD.multiplyScalarForeignArray x) arr
   {-# INLINE multiplyScalar #-}
-  powerScalar arr p = splitApply (SIMD.powerScalarForeignArray p) arr
-  {-# INLINE powerScalar #-}
   absPointwise = splitApply SIMD.absForeignArray
   {-# INLINE absPointwise #-}
   additionPointwise = unsafeSplitApply2 SIMD.additionForeignArray
@@ -281,42 +284,57 @@ instance NumArray F Double where
   {-# INLINE subtractionPointwise #-}
   multiplicationPointwise = unsafeSplitApply2 SIMD.multiplicationForeignArray
   {-# INLINE multiplicationPointwise #-}
-  liftNumArray f a = makeArrayLinear (vComp a) (size a) (f . unsafeLinearIndex a)
-  {-# INLINE liftNumArray #-}
-  unsafeLiftNumArray2 f a1 a2 =
-    makeArrayLinear (vComp a1 <> vComp a2) (size a1) $ \ !i ->
-      f (unsafeLinearIndex a1 i) (unsafeLinearIndex a2 i)
-  {-# INLINE unsafeLiftNumArray2 #-}
 
-instance FloatArray F Double where
+  powerPointwise arr p = splitApply (SIMD.powerScalarForeignArray p) arr
+  {-# INLINE powerPointwise #-}
+
+  -- negatePlusScalar arr x = splitApply (SIMD.negatePlusScalarForeignArray x) arr
+  -- {-# INLINE negatePlusScalar #-}
+  foldArray f !initAcc arr = go initAcc 0
+    where
+      !len = totalElem (size arr)
+      go !acc i
+        | i < len = go (f acc (unsafeLinearIndex arr i)) (i + 1)
+        | otherwise = acc
+  {-# INLINE foldArray #-}
+  unsafeLiftArray f arr = makeArrayLinear (getComp arr) (size arr) (f . unsafeLinearIndex arr)
+  {-# INLINE unsafeLiftArray #-}
+  unsafeLiftArray2 f a1 a2 =
+    makeArrayLinear
+      (getComp a1 <> getComp a2)
+      (SafeSz (liftIndex2 min (unSz (size a1)) (unSz (size a2)))) $ \ !i ->
+      f (unsafeLinearIndex a1 i) (unsafeLinearIndex a2 i)
+  {-# INLINE unsafeLiftArray2 #-}
+
+instance NumericFloat F Double where
   divideScalar arr x = splitApply (SIMD.divideScalarForeignArray x) arr
   {-# INLINE divideScalar #-}
-  recipMultiplyScalar arr x = splitApply (SIMD.recipMultiplyForeignArray x) arr
-  {-# INLINE recipMultiplyScalar #-}
-  recipPowerScalar arr p = splitApply (SIMD.recipPowerScalarForeignArray p) arr
-  {-# INLINE recipPowerScalar #-}
+  scalarDivide x arr = splitApply (SIMD.recipMultiplyForeignArray x) arr
+  {-# INLINE scalarDivide #-}
+  recipPointwise arr = splitApply (SIMD.recipPowerScalarForeignArray 1) arr
+  {-# INLINE recipPointwise #-}
   divisionPointwise = unsafeSplitApply2 SIMD.divisionForeignArray
   {-# INLINE divisionPointwise #-}
   sqrtPointwise = splitApply SIMD.sqrtForeignArray
   {-# INLINE sqrtPointwise #-}
 
-instance RoundFloatArray F Double Double where
-  roundPointwise = splitApply SIMD.roundForeignArray
-  {-# INLINE roundPointwise #-}
+-- instance RoundFloatArray F Double Double where
+--   roundPointwise = splitApply SIMD.roundForeignArray
+--   {-# INLINE roundPointwise #-}
 
-instance ReduceOrdArray F Double where
-  maximumArrayS e0 (FArray _ sz arr) =
-    unsafeInlineIO $ SIMD.maximumForeignArray e0 (totalSize sz) arr
-  {-# INLINE maximumArrayS #-}
-  minimumArrayS e0 (FArray _ sz arr) =
-    unsafeInlineIO $ SIMD.minimumForeignArray e0 (totalSize sz) arr
-  {-# INLINE minimumArrayS #-}
+-- instance ReduceOrdArray F Double where
+--   maximumArrayS e0 (FArray _ sz arr) =
+--     unsafeInlineIO $ SIMD.maximumForeignArray e0 (totalSize sz) arr
+--   {-# INLINE maximumArrayS #-}
+--   minimumArrayS e0 (FArray _ sz arr) =
+--     unsafeInlineIO $ SIMD.minimumForeignArray e0 (totalSize sz) arr
+--   {-# INLINE minimumArrayS #-}
 
 
 castFArray :: Array F ix a -> Array F ix e
 castFArray (FArray c sz a) = FArray c sz (castForeignArray a)
 
-instance (NumArray F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
+instance (Numeric F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
   (+) = applySameSizeArray2 additionPointwise
   {-# INLINE (+) #-}
   (-) = applySameSizeArray2 subtractionPointwise
@@ -330,40 +348,40 @@ instance (NumArray F e, Mutable F ix e, Storable e) => Num (Array F ix e) where
   fromInteger = singleton . fromInteger
   {-# INLINE fromInteger #-}
 
-instance (FloatArray F e, Mutable F ix e, Storable e) => Fractional (Array F ix e) where
+instance (NumericFloat F e, Mutable F ix e, Storable e) => Fractional (Array F ix e) where
   (/) = applySameSizeArray2 divisionPointwise
   {-# INLINE (/) #-}
-  recip = (`recipMultiplyScalar` 1)
+  recip = recipPointwise
   {-# INLINE recip #-}
   fromRational = singleton . fromRational
   {-# INLINE fromRational #-}
 
-instance (FloatArray F e, Mutable F ix e, Storable e) => Floating (Array F ix e) where
+instance (NumericFloat F e, Mutable F ix e, Storable e) => Floating (Array F ix e) where
   pi    = singleton pi
   {-# INLINE pi #-}
-  exp   = liftArray exp
+  exp   = unsafeLiftArray exp
   {-# INLINE exp #-}
-  log   = liftArray log
+  log   = unsafeLiftArray log
   {-# INLINE log #-}
-  sin   = liftArray sin
+  sin   = unsafeLiftArray sin
   {-# INLINE sin #-}
-  cos   = liftArray cos
+  cos   = unsafeLiftArray cos
   {-# INLINE cos #-}
-  asin  = liftArray asin
+  asin  = unsafeLiftArray asin
   {-# INLINE asin #-}
-  atan  = liftArray atan
+  atan  = unsafeLiftArray atan
   {-# INLINE atan #-}
-  acos  = liftArray acos
+  acos  = unsafeLiftArray acos
   {-# INLINE acos #-}
-  sinh  = liftArray sinh
+  sinh  = unsafeLiftArray sinh
   {-# INLINE sinh #-}
-  cosh  = liftArray cosh
+  cosh  = unsafeLiftArray cosh
   {-# INLINE cosh #-}
-  asinh = liftArray asinh
+  asinh = unsafeLiftArray asinh
   {-# INLINE asinh #-}
-  atanh = liftArray atanh
+  atanh = unsafeLiftArray atanh
   {-# INLINE atanh #-}
-  acosh = liftArray acosh
+  acosh = unsafeLiftArray acosh
   {-# INLINE acosh #-}
 
   -- Override default implementation
@@ -371,11 +389,11 @@ instance (FloatArray F e, Mutable F ix e, Storable e) => Floating (Array F ix e)
   {-# INLINE sqrt #-}
   (**) = applySameSizeArray2 (unsafeLiftArray2 (**))
   {-# INLINE (**) #-}
-  tan = liftArray tan
+  tan = unsafeLiftArray tan
   {-# INLINE tan #-}
-  tanh = liftArray tanh
+  tanh = unsafeLiftArray tanh
   {-# INLINE tanh #-}
-  log1p = liftArray log1p
+  log1p = unsafeLiftArray log1p
   {-# INLINE log1p #-}
-  expm1 = liftArray expm1
+  expm1 = unsafeLiftArray expm1
   {-# INLINE expm1 #-}

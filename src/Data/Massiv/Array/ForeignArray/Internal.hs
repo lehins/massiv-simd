@@ -137,7 +137,8 @@ fromMallocPtr ptr = do
   pure $ ForeignArray addr# contents
 {-# INLINE fromMallocPtr #-}
 
-
+-- TODO: When growing, check if it is a slice and move the data instead.
+-- TODO: Split grow and shrink, while keeping a general ralloc
 -- | Shrink or grow an array. If you need to check if the new array has been created or
 -- the same one has been resized use `isSameForeignArray`
 --

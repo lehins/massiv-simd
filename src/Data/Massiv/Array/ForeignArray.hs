@@ -26,7 +26,6 @@ module Data.Massiv.Array.ForeignArray
   , eqWithAlignedForeignArray
   , foldWithAlignedForeignArray
   , fold2WithAlignedForeignArray
-  -- , foldNonEmptyWithAlignedForeignArray
   -- ** Lifting
   , liftForeignArray
   , zipWithForeignArray

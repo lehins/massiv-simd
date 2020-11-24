@@ -12,7 +12,7 @@ import Data.Coerce
 import Data.Int
 import Data.Massiv.Array.ForeignArray
 import Data.Massiv.Core.Index
-import Data.Massiv.Core.Operations (roundDouble)
+--import Data.Massiv.Core.Operations (roundDouble)
 import Foreign.C.Types
 import Foreign.Ptr (Ptr)
 import GHC.Float (double2Int)
@@ -108,9 +108,9 @@ truncateForeignArray =
     perAlignment
 {-# INLINE truncateForeignArray #-}
 
-roundForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
-roundForeignArray = liftAlignedForeignArray c_round__m128d_a roundDouble perAlignment
-{-# INLINE roundForeignArray #-}
+-- roundForeignArray :: Sz1 -> ForeignArray Double -> ForeignArray Double -> IO ()
+-- roundForeignArray = liftAlignedForeignArray c_round__m128d_a roundDouble perAlignment
+-- {-# INLINE roundForeignArray #-}
 
 
 sumForeignArray :: Sz1 -> ForeignArray Double -> IO Double

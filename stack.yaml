@@ -1,9 +1,13 @@
-resolver: nightly-2019-06-06
+resolver: lts-16.22
 packages:
 - .
 extra-deps:
-- cabal-doctest-1.0.6@sha256:c0b4a5b1ff38d2867e7003b4be59f3bd7e8e204ab8c988d96d3a77472ae671cd,1408
-- scheduler-1.4.0@sha256:b182be9a7b84e1dba02dac761c3f4e204521d0f779d72d86040789d5aaadf92a,2833
-- unliftio-core-0.1.2.0@sha256:7f9b48adef8e36da0202e6e70a733a5e210263ed4177c93e47a4b3f89694194b,1081
 - ../massiv/massiv
 - ../massiv/massiv-test
+- ../massiv/massiv-bench
+- pvar-1.0.0.0@sha256:3d4a6855b0960baee78f6956f082eb8aa1cede52d2955b7faef186d1133f7964,1893
+- primitive-0.7.1.0@sha256:6a237bb338bcc43193077ff8e8c0f0ce2de14c652231496a15672e8b563a07e2,2604
+- scheduler-1.5.0@sha256:8b43f2991bf9a720b12192ba99525f705a44aeae9541a7bd73fbc7e7b56fd8f0,2437
+- random-1.2.0@sha256:4321209c8faedc034810ea8ed0dbc4a36f1a1df97b75af024219f2f533da57de,6094
+- splitmix-0.1.0.3
+- QuickCheck-2.14.2

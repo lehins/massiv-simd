@@ -37,20 +37,20 @@ spec = do
   describe "Dot Product" $ do
     it "any" $
       property $ \(ArrSameSz x y :: ArrSameSz F Ix1 Double) ->
-        epsilonEq epsilon (either throw id (x !.! y)) (A.sum (A.zipWith (*) x y))
+        epsilonEq epsilon (x !.! y) (A.sum (A.zipWith (*) x y))
     it "slice" $
       property $ \(ArrIx mat (i :. _)) ->
         let matP = computeAs P (mat :: Array F Ix2 Double)
             x = mat !> i
             y = matP !> i
-         in epsilonEq epsilon (either throw id (x !.! x)) (A.sum (A.zipWith (*) y y))
+         in epsilonEq epsilon (x !.! x) (A.sum (A.zipWith (*) y y))
     it "misaligned" $
       property $ \(ArrSameSz x' y' :: ArrSameSz F Ix1 Double) ->
         let sz = unSz (size x')
             x = extract' 0 (Sz (sz - 1)) x'
             y = extract' 1 (Sz (sz - 1)) y'
         in sz /= 0 ==>
-           epsilonEq epsilon (either throw id (x !.! y)) (A.sum (A.zipWith (*) x y))
+           epsilonEq epsilon (x !.! y) (A.sum (A.zipWith (*) x y))
   describe "OuterSlice" $
     it "V vs P" $
     property $ \(ArrIx mat (i :. _)) ->
@@ -65,64 +65,64 @@ spec = do
         res1 <- multiplyTransposed mat (mat :: Array F Ix2 Double)
         res2 <- multiplyTransposed matP matP
         pure $ epsilonArraysEq epsilon res1 res2
-    it "!><!" $
+    it ".><." $
       property $ \(ArrSameSz mat1 mat2) -> isNonEmpty (size mat1) ==> monadicIO $ run $ do
         let mat1P = computeAs P (mat1 :: Array F Ix2 Double)
             mat2P = computeAs P $ transpose mat2
-        res1 <- mat1 !><! transpose mat2
-        res2 <- mat1P !><! mat2P
+        res1 <- mat1 .><. transpose mat2
+        res2 <- mat1P .><. mat2P
         pure $ epsilonArraysEq epsilon res1 res2
   describe "Folding" $ do
     it "sum" $
       property $ \(arr :: Array D Ix1 Double) ->
-        epsilonEq epsilon (A.sum arr) (sumArrayS (computeAs F arr))
+        epsilonEq epsilon (A.sum arr) (sumArray (computeAs F arr))
     it "product" $
       property $ \(arr :: Array D Ix1 Double) ->
-        epsilonEq epsilon (A.product arr) (productArrayS (computeAs F arr))
-    it "evenPowerSum" $
-      property $ \(arr :: Array D Ix1 Double) (Positive pow) ->
-        even pow ==>
-        epsilonEq epsilon (evenPowerSumArrayS arr pow) (evenPowerSumArrayS (computeAs F arr) pow)
-    it "absPowerSum" $
-      property $ \(arr :: Array D Ix1 Double) (Positive pow) ->
-        epsilonEq epsilon (absPowerSumArrayS arr pow) (absPowerSumArrayS (computeAs F arr) pow)
-    it "absPowerSum == powerSum even" $
-      property $ \(arr :: Array F Ix1 Double) (Positive pow) ->
-        even pow ==>
-        epsilonEq epsilon (evenPowerSumArrayS arr pow) (absPowerSumArrayS arr pow)
-    it "absMax" $
-      property $ \(arr :: Array D Ix1 Double) ->
-        epsilonEq epsilon (absMaxArrayS arr) (absMaxArrayS (computeAs F arr))
-    it "normL1" $
-      property $ \(arr :: Array F Ix1 Double) ->
-        epsilonEq epsilon (normL1 (delay arr)) (normL1 arr)
+        epsilonEq epsilon (A.product arr) (productArray (computeAs F arr))
+    -- it "evenPowerSum" $
+    --   property $ \(arr :: Array D Ix1 Double) (Positive pow) ->
+    --     even pow ==>
+    --     epsilonEq epsilon (evenPowerSumArrayS arr pow) (evenPowerSumArrayS (computeAs F arr) pow)
+    -- it "absPowerSum" $
+    --   property $ \(arr :: Array D Ix1 Double) (Positive pow) ->
+    --     epsilonEq epsilon (absPowerSumArrayS arr pow) (absPowerSumArrayS (computeAs F arr) pow)
+    -- it "absPowerSum == powerSum even" $
+    --   property $ \(arr :: Array F Ix1 Double) (Positive pow) ->
+    --     even pow ==>
+    --     epsilonEq epsilon (evenPowerSumArrayS arr pow) (absPowerSumArrayS arr pow)
+    -- it "absMax" $
+    --   property $ \(arr :: Array D Ix1 Double) ->
+    --     epsilonEq epsilon (absMaxArrayS arr) (absMaxArrayS (computeAs F arr))
+    -- it "normL1" $
+    --   property $ \(arr :: Array F Ix1 Double) ->
+    --     epsilonEq epsilon (normL1 (delay arr)) (normL1 arr)
     it "normL2" $
       property $ \(arr :: Array F Ix1 Double) ->
         epsilonEq epsilon (normL2 (delay arr)) (normL2 arr)
-    it "normL3" $
-      property $ \(arr :: Array F Ix1 Double) ->
-        epsilonEq epsilon (normL3 (delay arr)) (normL3 arr)
-    it "normL4" $
-      property $ \(arr :: Array F Ix1 Double) ->
-        epsilonEq epsilon (normL4 (delay arr)) (normL4 arr)
-    it "normLpi" $
-      property $ \(arr :: Array F Ix1 Double) -> monadicIO $ run $ do
-        n1 <- normLpi 1 arr
-        n2 <- normLpi 2 arr
-        n3 <- normLpi 3 arr
-        n4 <- normLpi 4 arr
-        pure (counterexample "normL1" (epsilonEq epsilon (normL1 arr) n1) .&&.
-              counterexample "normL2" (epsilonEq epsilon (normL2 arr) n2) .&&.
-              counterexample "normL3" (epsilonEq epsilon (normL3 arr) n3) .&&.
-              counterexample "normL4" (epsilonEq epsilon (normL4 arr) n4))
-    it "maximum" $
-      property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
-        monadicIO $ run
-        (epsilonEq epsilon <$> maximumM' arr <*> maximumM' (computeAs F arr))
-    it "minimum" $
-      property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
-        monadicIO $ run
-        (epsilonEq epsilon <$> minimumM' arr <*> minimumM' (computeAs F arr))
+    -- it "normL3" $
+    --   property $ \(arr :: Array F Ix1 Double) ->
+    --     epsilonEq epsilon (normL3 (delay arr)) (normL3 arr)
+    -- it "normL4" $
+    --   property $ \(arr :: Array F Ix1 Double) ->
+    --     epsilonEq epsilon (normL4 (delay arr)) (normL4 arr)
+    -- it "normLpi" $
+    --   property $ \(arr :: Array F Ix1 Double) -> monadicIO $ run $ do
+    --     n1 <- normLpi 1 arr
+    --     n2 <- normLpi 2 arr
+    --     n3 <- normLpi 3 arr
+    --     n4 <- normLpi 4 arr
+    --     pure (counterexample "normL1" (epsilonEq epsilon (normL1 arr) n1) .&&.
+    --           counterexample "normL2" (epsilonEq epsilon (normL2 arr) n2) .&&.
+    --           counterexample "normL3" (epsilonEq epsilon (normL3 arr) n3) .&&.
+    --           counterexample "normL4" (epsilonEq epsilon (normL4 arr) n4))
+    -- it "maximum" $
+    --   property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
+    --     monadicIO $ run
+    --     (epsilonEq epsilon <$> maximumM' arr <*> maximumM' (computeAs F arr))
+    -- it "minimum" $
+    --   property $ \(ArrIx arr _ :: ArrIx D Ix1 Double) ->
+    --     monadicIO $ run
+    --     (epsilonEq epsilon <$> minimumM' arr <*> minimumM' (computeAs F arr))
     -- it "eq" $
     --   property $ \(arr :: Array D Ix1 Double) ->
     --     eqDouble (computeAs F arr) (computeAs F arr)
@@ -132,41 +132,40 @@ spec = do
   describe "Mapping" $ do
     it "plus" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr !+. x) (computeAs F arr !+. x)
+        epsilonArraysEq epsilon (arr .+ x) (computeAs F arr .+ x)
     it "minus scalar" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr !-. x) (computeAs F arr !-. x)
+        epsilonArraysEq epsilon (arr .- x) (computeAs F arr .- x)
     it "minus array" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (x .-! arr) (x .-! computeAs F arr)
+        epsilonArraysEq epsilon (x -. arr) (x -. computeAs F arr)
     it "multiply" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr !*. x) (computeAs F arr !*. x)
+        epsilonArraysEq epsilon (arr .* x) (computeAs F arr .* x)
     it "divide" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (arr !/. x) (computeAs F arr !/. x)
+        epsilonArraysEq epsilon (arr ./ x) (computeAs F arr ./ x)
     it "multiplyDivide" $
       property $ \(arr :: Array D Ix1 Double) x ->
-        epsilonArraysEq epsilon (x ./! arr) (x ./! computeAs F arr)
+        epsilonArraysEq epsilon (x /. arr) (x /. computeAs F arr)
     it "abs" $
       property $ \(arr :: Array D Ix1 Double) ->
         arraysEq (abs arr) (abs (computeAs F arr))
-    it "power (^)" $
+    xit "power (^)" $
       property $ \(arr :: Array D Ix1 Double) (NonNegative pow) ->
-        monadicIO $ run
-          (epsilonArraysEq epsilon <$> (arr !^. pow) <*> (computeAs F arr !^. pow))
+        epsilonArraysEq epsilon (arr .^ pow) (computeAs F arr .^ pow)
     it "power (^^)" $
-      property $ \(arr :: Array D Ix1 Double) pow ->
-        epsilonArraysEq epsilon (arr !^^. pow) (computeAs F arr !^^. pow)
-    it "sqrt" $
+      property $ \(arr :: Array D Ix1 Double) (pow :: Int) ->
+        epsilonArraysEq epsilon (arr .^^ pow) (computeAs F arr .^^ pow)
+    xit "sqrt" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonArraysEq epsilon (sqrt arr) (sqrt (computeAs F arr))
-    it "recip" $
+    xit "recip" $
       property $ \(arr :: Array D Ix1 Double) ->
         epsilonArraysEq epsilon (recip arr) (recip (computeAs F arr))
-    it "round" $
-      property $ \(arr :: Array D Ix1 Double) ->
-        arraysEq (roundPointwise arr :: Array D Ix1 Double) (roundPointwise (computeAs F arr))
+    -- it "round" $
+    --   property $ \(arr :: Array D Ix1 Double) ->
+    --     arraysEq (roundPointwise arr :: Array D Ix1 Double) (roundPointwise (computeAs F arr))
     -- it "truncate" $
     --   property $ \(arr :: Array D Ix1 Double) ->
     --     arraysEq (truncatePointwise arr :: Array D Ix1 Int64) (truncatePointwise (computeAs F arr))
@@ -186,20 +185,16 @@ spec = do
   describe "Zipping" $ do
     it "addition" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
-        monadicIO $ run $
-        epsilonArraysEq epsilon <$> (delay arr1 !+! delay arr2) <*> (arr1 !+! arr2)
+        epsilonArraysEq epsilon (delay arr1 !+! delay arr2) (arr1 !+! arr2)
     it "subtraction" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
-        monadicIO $ run $
-        epsilonArraysEq epsilon <$> (delay arr1 !-! delay arr2) <*> (arr1 !-! arr2)
+        epsilonArraysEq epsilon (delay arr1 !-! delay arr2) (arr1 !-! arr2)
     it "multiplication" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
-        monadicIO $ run $
-        epsilonArraysEq epsilon <$> (delay arr1 !*! delay arr2) <*> (arr1 !*! arr2)
+        epsilonArraysEq epsilon (delay arr1 !*! delay arr2) (arr1 !*! arr2)
     it "division" $
       property $ \(ArrSameSz arr1 arr2 :: ArrSameSz F Ix1 Double) ->
-        monadicIO $ run $
-        epsilonArraysEq epsilon <$> (delay arr1 !/! delay arr2) <*> (arr1 !/! arr2)
+        epsilonArraysEq epsilon (delay arr1 !/! delay arr2) (arr1 !/! arr2)
 
 
 data ArrSameSz r ix e = ArrSameSz !(Array r ix e) !(Array r ix e)
@@ -233,15 +228,15 @@ epsilonArraysEq epsilon arr1 arr2 =
   foldlS (.&&.) (property True) (A.zipWith (epsilonEq epsilon) arr1 arr2)
 
 
-epsilonEq ::
-     (Show a, RealFloat a)
-  => a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
-  -> a -- ^ Expected result.
-  -> a -- ^ Tested value.
-  -> Property
-epsilonEq epsilon x y =
-  x === y .||. counterexample (show diff ++ " > " ++ show n) (diff <= n) .||. (isNaN x && isNaN y)
-  where
-    (absx, absy) = (abs x, abs y)
-    n = epsilon * (1 + max absx absy)
-    diff = abs (y - x)
+-- epsilonEq ::
+--      (Show a, RealFloat a)
+--   => a -- ^ Epsilon, a maximum tolerated error. Sign is ignored.
+--   -> a -- ^ Expected result.
+--   -> a -- ^ Tested value.
+--   -> Property
+-- epsilonEq epsilon x y =
+--   x === y .||. counterexample (show diff ++ " > " ++ show n) (diff <= n) .||. (isNaN x && isNaN y)
+--   where
+--     (absx, absy) = (abs x, abs y)
+--     n = epsilon * (1 + max absx absy)
+--     diff = abs (y - x)
